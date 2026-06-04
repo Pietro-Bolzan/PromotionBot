@@ -1,3 +1,10 @@
+from app.core.security import validate_api_key
+from app.db.database import get_db
+from sqlalchemy.orm import Session
+from uuid import UUID
+
+from app.models.promotions import Promotion
+
 from fastapi import (
     APIRouter, 
     HTTPException, 
@@ -5,19 +12,31 @@ from fastapi import (
     Depends, 
     Query
 )
+
+from app.repositories.promotion_repo import (
+    PromotionRepository
+)
+
 from app.schemas.promotion_shema import (
     PromotionResponse, 
     PromotionProcessingResult,
-    GeneratedCopyResponse
+    GeneratedCopyResponse,
+    PromotionDeliveryResponse
 )
-from sqlalchemy.orm import Session
-from uuid import UUID
-from app.core.security import validate_api_key
-from app.db.database import get_db
-from app.repositories.promotion_repo import PromotionRepository
-from app.services.amazon_service import AmazonService
-from app.services.promotion_service import PromotionService
-from app.services.openai_service import OpenAIService
+
+from app.services.openai_service import (
+    OpenAIService
+)
+from app.services.telegram_service import (
+    TelegramService
+)
+from app.services.promotion_service import (
+    AmazonService,
+    PromotionService,
+)
+from app.services.promotion_delivery_service import (
+    PromotionDeliveryService
+)
 
 
 router = APIRouter(prefix="/api/promotions", tags=["promotions"])
@@ -82,5 +101,35 @@ def list_promotions(
     promotion_repository = PromotionRepository(db)
     return promotion_repository.list_all(limit=limit, offset=offset)
 
+@router.post(
+    "/{promotion_id}/send-telegram", 
+    response_model=PromotionDeliveryResponse,
+    dependencies=[Depends(validate_api_key)],
+)
+def send_promotion_to_telegram(
+    promotion_id: UUID,
+    db: Session = Depends(get_db),
+):
+    promotion_repository = PromotionRepository(db)
+    promotion = promotion_repository.get_by_id(promotion_id)
 
+    if promotion is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Promotion not found",
+        )
+
+    delivery_service = PromotionDeliveryService(
+        promotion_repository=promotion_repository,
+        openai_service=OpenAIService(),
+        telegram_service=TelegramService(),
+    )
+
+    delivered_promotion = delivery_service.deliver_to_telegram(promotion)
+
+    return PromotionDeliveryResponse(
+        promotion_id=delivered_promotion.id,
+        status=delivered_promotion.status.value,
+        message="Promotion sent to Telegram",
+    )
 

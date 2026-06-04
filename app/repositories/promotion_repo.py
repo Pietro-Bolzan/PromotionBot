@@ -1,8 +1,6 @@
-from datetime import datetime
-
+from datetime import datetime, UTC
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-
 from app.models.promotions import Promotion, PromotionStatus
 
 
@@ -64,3 +62,21 @@ class PromotionRepository:
         self.db.refresh(promotion)
         return promotion
 
+    def mark_as_sent(self, promotion: Promotion) -> Promotion:
+        promotion.status = PromotionStatus.SENT
+        promotion.sent_at = datetime.now(UTC)
+
+        self.db.commit()
+        self.db.refresh(promotion)
+
+        return promotion
+    
+    def mark_as_failed(self, promotion: Promotion) -> Promotion:
+        promotion.status = PromotionStatus.FAILED
+
+        self.db.commit()
+        self.db.refresh(promotion)
+
+        return promotion
+    
+    

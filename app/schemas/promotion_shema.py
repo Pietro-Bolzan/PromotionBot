@@ -45,3 +45,8 @@ class PromotionProcessingResult(BaseModel):
 class GeneratedCopyResponse(BaseModel):
     promotion_id: UUID
     message: str
+    
+class PromotionDeliveryResponse(BaseModel):
+    promotion_id: UUID
+    status: str
+    message: str
