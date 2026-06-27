@@ -80,3 +80,12 @@ class PromotionRepository:
         return promotion
     
     
+    def list_pending(self, limit: int = 10) -> list[Promotion]:
+        statement = (
+            select(Promotion)
+            .where(Promotion.status == PromotionStatus.PENDING)
+            .order_by(Promotion.created_at.asc())
+            .limit(limit)
+        )
+
+        return list(self.db.scalars(statement).all())

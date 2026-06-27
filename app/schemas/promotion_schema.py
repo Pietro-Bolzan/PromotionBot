@@ -50,3 +50,8 @@ class PromotionDeliveryResponse(BaseModel):
     promotion_id: UUID
     status: str
     message: str
+    
+class PendingDeliveryResponse(BaseModel):
+    processed: int
+    sent: int
+    failed: int

@@ -10,6 +10,7 @@ from fastapi import (
     HTTPException, 
     status, 
     Depends, 
+    Query,
     Query
 )
 
@@ -17,11 +18,12 @@ from app.repositories.promotion_repo import (
     PromotionRepository
 )
 
-from app.schemas.promotion_shema import (
+from app.schemas.promotion_schema import (
     PromotionResponse, 
     PromotionProcessingResult,
     GeneratedCopyResponse,
-    PromotionDeliveryResponse
+    PromotionDeliveryResponse,
+    PendingDeliveryResponse
 )
 
 from app.services.openai_service import (
@@ -132,4 +134,23 @@ def send_promotion_to_telegram(
         status=delivered_promotion.status.value,
         message="Promotion sent to Telegram",
     )
+    
+@router.post(
+    "/send-pending-telegram",
+    response_model=PendingDeliveryResponse,
+    dependencies=[Depends(validate_api_key)],
+)
+def send_pending_promotions_to_telegram(
+    limit: int = Query(default=10, ge=1, le=50),
+    db: Session = Depends(get_db),
+):
+    promotion_repository = PromotionRepository(db)
+
+    delivery_service = PromotionDeliveryService(
+        promotion_repository=promotion_repository,
+        openai_service=OpenAIService(),
+        telegram_service=TelegramService(),
+    )
+
+    return delivery_service.deliver_pending_to_telegram(limit=limit)
 

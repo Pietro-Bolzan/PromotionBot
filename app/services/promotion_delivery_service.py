@@ -33,3 +33,22 @@ class PromotionDeliveryService:
         except Exception:
             self.promotion_repository.mark_as_failed(promotion)
             raise
+        
+    def deliver_pending_to_telegram(self, limit: int = 10) -> dict:
+        promotions = self.promotion_repository.list_pending(limit=limit)
+
+        sent = 0
+        failed = 0
+
+        for promotion in promotions:
+            try:
+                self.deliver_to_telegram(promotion)
+                sent += 1
+            except Exception:
+                failed += 1
+
+        return {
+            "processed": len(promotions),
+            "sent": sent,
+            "failed": failed,
+        }

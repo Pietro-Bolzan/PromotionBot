@@ -1,6 +1,6 @@
 from decimal import Decimal
 from app.core.config import settings
-from app.schemas.promotion_shema import PromotionCandidate, PromotionProcessingResult
+from app.schemas.promotion_schema import PromotionCandidate, PromotionProcessingResult
 
 class AmazonService:
   
