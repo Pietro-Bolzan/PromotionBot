@@ -27,7 +27,10 @@ class PromotionDeliveryService:
                     generated_message=message,
                 )
 
-            self.telegram_service.send_message(message)
+            self.telegram_service.send_promotion(
+                message=message,
+                image_url=promotion.image_url,
+            )
             return self.promotion_repository.mark_as_sent(promotion)
 
         except Exception:
