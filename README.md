@@ -1,8 +1,8 @@
-# Amazon Bot
-
-## Iniciar a aplicação
+# Promotion Bot
 
 Pré-requisitos: Python 3.13+ e Docker Desktop.
+
+## Iniciar a aplicação
 
 ```powershell
 .\venv\Scripts\Activate.ps1

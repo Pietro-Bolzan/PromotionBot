@@ -19,6 +19,9 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
     )
-  
+    
+    scheduler_enabled: bool = False
+    scheduler_interval_seconds: int = 600
+    scheduler_delivery_limit: int = 5
   
 settings = Settings()
