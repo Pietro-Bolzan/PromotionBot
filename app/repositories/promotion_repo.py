@@ -1,12 +1,13 @@
-from datetime import datetime, UTC
+from datetime import UTC, datetime
+from uuid import UUID
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+
 from app.models.promotions import Promotion, PromotionStatus
 
 
 class PromotionRepository:
-    from uuid import UUID
-    
     def __init__(self, db: Session):
         self.db = db
 

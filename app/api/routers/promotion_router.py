@@ -1,44 +1,23 @@
-from app.core.security import validate_api_key
-from app.db.database import get_db
-from sqlalchemy.orm import Session
 from uuid import UUID
 
-from app.models.promotions import Promotion
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.orm import Session
 
-from fastapi import (
-    APIRouter, 
-    HTTPException, 
-    status, 
-    Depends, 
-    Query,
-    Query
-)
-
-from app.repositories.promotion_repo import (
-    PromotionRepository
-)
-
+from app.core.security import validate_api_key
+from app.db.database import get_db
+from app.repositories.promotion_repo import PromotionRepository
 from app.schemas.promotion_schema import (
-    PromotionResponse, 
-    PromotionProcessingResult,
     GeneratedCopyResponse,
+    PendingDeliveryResponse,
     PromotionDeliveryResponse,
-    PendingDeliveryResponse
+    PromotionProcessingResult,
+    PromotionResponse,
 )
-
-from app.services.openai_service import (
-    OpenAIService
-)
-from app.services.telegram_service import (
-    TelegramService
-)
-from app.services.promotion_service import (
-    AmazonService,
-    PromotionService,
-)
-from app.services.promotion_delivery_service import (
-    PromotionDeliveryService
-)
+from app.services.amazon_service import AmazonService
+from app.services.openai_service import OpenAIService
+from app.services.promotion_delivery_service import PromotionDeliveryService
+from app.services.promotion_service import PromotionService
+from app.services.telegram_service import TelegramService
 
 
 router = APIRouter(prefix="/api/promotions", tags=["promotions"])
