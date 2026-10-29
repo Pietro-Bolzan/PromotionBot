@@ -20,14 +20,20 @@ from app.services.promotion_service import PromotionService
 from app.services.telegram_service import TelegramService
 
 
-router = APIRouter(prefix="/api/promotions", tags=["promotions"])
+# Authentication is declared on the router, so every route here is protected by
+# default -- including routes added later. Exposing something publicly requires
+# deliberately moving it out of this router.
+router = APIRouter(
+    prefix="/api/promotions",
+    tags=["promotions"],
+    dependencies=[Depends(validate_api_key)],
+)
 
 
 @router.post(
     "/run",
     response_model=PromotionProcessingResult,
-    dependencies=[Depends(validate_api_key)]
-) 
+)
 def run_promotions(
     db: Session = Depends(get_db)
 ):
@@ -85,7 +91,6 @@ def list_promotions(
 @router.post(
     "/{promotion_id}/send-telegram", 
     response_model=PromotionDeliveryResponse,
-    dependencies=[Depends(validate_api_key)],
 )
 def send_promotion_to_telegram(
     promotion_id: UUID,
@@ -117,7 +122,6 @@ def send_promotion_to_telegram(
 @router.post(
     "/send-pending-telegram",
     response_model=PendingDeliveryResponse,
-    dependencies=[Depends(validate_api_key)],
 )
 def send_pending_promotions_to_telegram(
     limit: int = Query(default=10, ge=1, le=50),
