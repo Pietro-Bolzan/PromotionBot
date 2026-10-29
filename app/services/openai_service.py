@@ -22,13 +22,12 @@ Preço original: R$ {promotion.original_price}
 Preço com desconto: R$ {promotion.discounted_price}
 Desconto: {promotion.discount_percentage}%
 Categoria: {promotion.category}
-Link: {promotion.product_url}
 
 Regras:
 - máximo 5 linhas
 - destaque a economia
 - gere urgência
-- termine com o link
+- não inclua links nem URLs: o link do produto é adicionado automaticamente ao final
 """
 
         response = self.client.responses.create(
@@ -47,6 +46,5 @@ Regras:
         return (
             f"Oferta encontrada: {promotion.title}\n"
             f"De R$ {promotion.original_price} por R$ {promotion.discounted_price}\n"
-            f"Desconto de {promotion.discount_percentage}%\n"
-            f"Confira: {promotion.product_url}"
+            f"Desconto de {promotion.discount_percentage}%"
         )

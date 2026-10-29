@@ -15,6 +15,10 @@ Todas as variáveis disponíveis estão documentadas em `.env.example`. `DATABAS
 opcionais em desenvolvimento: sem a chave da OpenAI a copy cai para um template fixo, e sem
 as credenciais do Telegram nada é enviado.
 
+`AMAZON_PARTNER_TAG` (seu ID de rastreamento do Amazon Associates) é obrigatória para
+enviar promoções. Sem ela o envio é recusado antes de qualquer chamada à OpenAI, porque
+link sem tag não gera comissão.
+
 As migrations leem a mesma `DATABASE_URL` — o `alembic.ini` não contém URL de banco. Uma
 variável de ambiente tem precedência sobre o `.env`, o que é como a configuração de produção
 é injetada.
@@ -33,3 +37,13 @@ Acesse:
 - API: http://127.0.0.1:8000
 - Swagger: http://127.0.0.1:8000/docs
 - Health check: http://127.0.0.1:8000/health
+
+## Testes
+
+```powershell
+pip install -r requirements-dev.txt
+python -m pytest
+```
+
+Os testes nunca acessam OpenAI, Telegram ou o banco real: `tests/conftest.py` substitui
+todas as credenciais por valores falsos antes de a aplicação ser importada.

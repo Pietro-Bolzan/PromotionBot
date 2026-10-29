@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     database_url: str
     app_api_key: str
     amazon_min_discount_percent: Decimal = Decimal("20")
+    amazon_partner_tag: str = ""
     
     openai_api_key: str = ""
     openai_model: str = "gpt-4.1-mini"
