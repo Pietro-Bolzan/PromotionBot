@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_model: str = "gpt-4.1-mini"
     openai_max_output_tokens: int = 300
+    openai_timeout_seconds: float = Field(default=20.0, gt=0)
     
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""

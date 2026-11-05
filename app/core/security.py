@@ -49,3 +49,8 @@ def mask_secrets(text: str) -> str:
             text = text.replace(secret, "***")
 
     return _TELEGRAM_TOKEN_IN_URL.sub("/bot***/", text)
+
+
+def describe_error(error: BaseException, max_length: int = 1000) -> str:
+    """One-line description of an error, safe to store or log."""
+    return mask_secrets(f"{type(error).__name__}: {error}")[:max_length]

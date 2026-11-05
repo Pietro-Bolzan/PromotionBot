@@ -4,7 +4,7 @@ from contextlib import suppress
 from sqlalchemy import inspect
 
 from app.core.config import settings
-from app.core.security import mask_secrets
+from app.core.security import describe_error
 from app.models.promotions import Promotion
 from app.repositories.promotion_repo import PromotionRepository
 from app.services.affiliate import build_affiliate_url
@@ -12,8 +12,6 @@ from app.services.openai_service import OpenAIService
 from app.services.telegram_service import TelegramService
 
 logger = logging.getLogger(__name__)
-
-MAX_ERROR_LENGTH = 1000
 
 
 class PromotionDeliveryService:
@@ -102,7 +100,7 @@ class PromotionDeliveryService:
             self.promotion_repository.record_failure(
                 promotion,
                 attempts=attempts,
-                error=_describe_error(error),
+                error=describe_error(error),
                 give_up=attempts >= settings.delivery_max_attempts,
             )
         except Exception:
@@ -146,8 +144,3 @@ class PromotionDeliveryService:
                 "AMAZON_PARTNER_TAG is not configured; refusing to send links "
                 "that earn no commission"
             )
-
-
-def _describe_error(error: Exception) -> str:
-    # Stored in last_error and returned by the API: secrets must not survive.
-    return mask_secrets(f"{type(error).__name__}: {error}")[:MAX_ERROR_LENGTH]

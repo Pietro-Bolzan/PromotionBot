@@ -2,10 +2,12 @@ import logging
 from unittest.mock import MagicMock
 
 import httpx
+import openai
 import pytest
 
 from app.core.config import settings
 from app.models.promotions import PromotionStatus
+from app.services.openai_service import OpenAIService
 from app.services.promotion_delivery_service import PromotionDeliveryService
 
 
@@ -201,3 +203,24 @@ def test_unrecordable_delivery_raises_without_requeueing(
 
     repository.record_failure.assert_not_called()
     assert "may be posted again" in caplog.text
+
+
+def test_openai_outage_still_delivers_the_promotion(
+    repository, telegram_service, make_promotion
+):
+    # Regression: an OpenAI failure used to mark the promotion as failed instead
+    # of sending it with the template copy.
+    openai_service = OpenAIService()
+    openai_service.client = MagicMock()
+    openai_service.client.responses.create.side_effect = openai.APIConnectionError(
+        request=httpx.Request("POST", "https://api.openai.com/v1/responses")
+    )
+    delivery = PromotionDeliveryService(repository, openai_service, telegram_service)
+
+    delivery.deliver_to_telegram(make_promotion())
+
+    repository.mark_as_sent.assert_called_once()
+    repository.record_failure.assert_not_called()
+    assert telegram_service.send_promotion.call_args.kwargs["message"].startswith(
+        "Oferta encontrada"
+    )
