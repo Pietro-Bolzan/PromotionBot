@@ -35,7 +35,9 @@ def delivery(repository, openai_service, telegram_service):
     return PromotionDeliveryService(repository, openai_service, telegram_service)
 
 
-def test_sends_the_tagged_affiliate_link(delivery, telegram_service, repository, make_promotion):
+def test_sends_the_tagged_affiliate_link(
+    delivery, telegram_service, repository, make_promotion
+):
     delivery.deliver_to_telegram(make_promotion())
 
     sent = telegram_service.send_promotion.call_args.kwargs
@@ -49,7 +51,9 @@ def test_reuses_persisted_copy_instead_of_paying_again(
     delivery.deliver_to_telegram(make_promotion(generated_message="Copy existente"))
 
     openai_service.generate_sales_copy.assert_not_called()
-    assert telegram_service.send_promotion.call_args.kwargs["message"] == "Copy existente"
+    assert (
+        telegram_service.send_promotion.call_args.kwargs["message"] == "Copy existente"
+    )
 
 
 def test_missing_tag_refuses_before_spending_or_failing(
@@ -153,7 +157,7 @@ def test_last_allowed_attempt_gives_up(
     telegram_service.send_promotion.side_effect = ConnectionError("telegram down")
 
     with pytest.raises(ConnectionError):
-        delivery.deliver_to_telegram(make_promotion(attempts=2))   # max is 3
+        delivery.deliver_to_telegram(make_promotion(attempts=2))  # max is 3
 
     recorded = repository.record_failure.call_args.kwargs
     assert recorded["attempts"] == 3
@@ -197,9 +201,11 @@ def test_unrecordable_delivery_raises_without_requeueing(
 ):
     repository.mark_as_sent.side_effect = RuntimeError("database down")
 
-    with caplog.at_level(logging.CRITICAL):
-        with pytest.raises(RuntimeError, match="database down"):
-            delivery.deliver_to_telegram(make_promotion())
+    with (
+        caplog.at_level(logging.CRITICAL),
+        pytest.raises(RuntimeError, match="database down"),
+    ):
+        delivery.deliver_to_telegram(make_promotion())
 
     repository.record_failure.assert_not_called()
     assert "may be posted again" in caplog.text

@@ -1,12 +1,12 @@
 from decimal import Decimal
+
 from app.core.config import settings
 from app.schemas.promotion_schema import PromotionCandidate
 
+
 class AmazonService:
-  
     def fetch_promotions(self) -> list[PromotionCandidate]:
         candidates = [
-          
             PromotionCandidate(
                 asin="B0CNOTE001",
                 title="Notebook Acer Aspire 5 Intel Core i5 16GB RAM 512GB SSD",
@@ -18,7 +18,6 @@ class AmazonService:
                 category="Computers",
                 rating=Decimal("4.70"),
             ),
-            
             PromotionCandidate(
                 asin="B0CPHONE02",
                 title="Smartphone Samsung Galaxy 256GB Tela AMOLED",
@@ -30,7 +29,6 @@ class AmazonService:
                 category="Electronics",
                 rating=Decimal("4.60"),
             ),
-            
             PromotionCandidate(
                 asin="B0LOWDISC04",
                 title="Mouse Sem Fio Compacto USB",
@@ -41,9 +39,9 @@ class AmazonService:
                 image_url="https://m.media-amazon.com/images/I/51mockmouse.jpg",
                 category="Computers",
                 rating=Decimal("4.30"),
-            ),  
+            ),
         ]
-      
+
         return [
             candidate
             for candidate in candidates

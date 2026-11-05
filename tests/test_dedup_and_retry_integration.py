@@ -49,7 +49,9 @@ def collect(db, *asins: str) -> dict:
         )
         for asin in asins
     ]
-    return PromotionService(amazon, PromotionRepository(db)).collect_pending_promotions()
+    return PromotionService(
+        amazon, PromotionRepository(db)
+    ).collect_pending_promotions()
 
 
 def rows_for(db, asin: str = ASIN) -> int:
@@ -73,7 +75,9 @@ def delivery(db_session, telegram_service):
 # --- deduplication ---
 
 
-def test_failed_product_is_not_collected_again_inside_the_window(db_session, make_promotion):
+def test_failed_product_is_not_collected_again_inside_the_window(
+    db_session, make_promotion
+):
     # Regression: FAILED rows matched neither old check (sent_at is NULL, status
     # is not PENDING), so the product came back as a new row on every cycle.
     add_row(db_session, make_promotion, status=PromotionStatus.FAILED, attempts=3)
@@ -84,8 +88,12 @@ def test_failed_product_is_not_collected_again_inside_the_window(db_session, mak
     assert rows_for(db_session) == 1
 
 
-def test_open_row_blocks_the_product_even_outside_the_window(db_session, make_promotion):
-    add_row(db_session, make_promotion, status=PromotionStatus.PENDING, created_at=ago(30))
+def test_open_row_blocks_the_product_even_outside_the_window(
+    db_session, make_promotion
+):
+    add_row(
+        db_session, make_promotion, status=PromotionStatus.PENDING, created_at=ago(30)
+    )
 
     # Checked on the query itself: otherwise the unique index would hide a
     # broken query by rejecting the insert anyway.
@@ -111,7 +119,7 @@ def test_unique_index_settles_a_race_the_check_cannot_see(db_session, make_promo
     repository = PromotionRepository(db_session)
 
     assert repository.save_unless_duplicate(make_promotion()) is False
-    assert rows_for(db_session) == 1   # and the session is still usable
+    assert rows_for(db_session) == 1  # and the session is still usable
 
 
 # --- retry ---
@@ -142,7 +150,10 @@ def test_retry_that_succeeds_is_sent_once(
     db_session, make_promotion, delivery, telegram_service
 ):
     promotion = add_row(db_session, make_promotion)
-    telegram_service.send_promotion.side_effect = [ConnectionError("telegram down"), None]
+    telegram_service.send_promotion.side_effect = [
+        ConnectionError("telegram down"),
+        None,
+    ]
 
     delivery.deliver_pending_to_telegram()
     delivery.deliver_pending_to_telegram()
@@ -182,7 +193,7 @@ def test_database_error_does_not_poison_the_rest_of_the_batch(
 
     def copy_that_breaks_the_first(promotion):
         if promotion.asin == "B0BROKEN01":
-            promotion.title = "x" * 600   # String(500): the next commit fails
+            promotion.title = "x" * 600  # String(500): the next commit fails
         return "Copy"
 
     openai_service = MagicMock()
@@ -197,5 +208,5 @@ def test_database_error_does_not_poison_the_rest_of_the_batch(
 
     assert result == {"processed": 2, "sent": 1, "failed": 1}
     assert healthy.status == PromotionStatus.SENT
-    assert broken.status == PromotionStatus.PENDING   # back in the queue
+    assert broken.status == PromotionStatus.PENDING  # back in the queue
     assert broken.last_error.startswith("DataError")

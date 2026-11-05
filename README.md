@@ -58,3 +58,28 @@ pulados e os demais rodam normalmente. Só os unitários:
 ```powershell
 python -m pytest -m "not integration"
 ```
+
+## Verificações automáticas no commit
+
+A cada `git commit`, o [pre-commit](https://pre-commit.com) roda e **bloqueia o commit** se
+algo falhar:
+
+- **ruff**: lint (bugs prováveis, imports, problemas de segurança) e formatação;
+- **higiene**: espaço no fim de linha, quebra de linha final, YAML/TOML válidos, marcador de
+  conflito de merge, `breakpoint()` esquecido, arquivo grande, chave privada;
+- **segredos**: recusa arquivos `.env` e qualquer chave da OpenAI ou token de bot do Telegram
+  escrito no código;
+- **pytest**: a suíte inteira, quando arquivos Python ou de configuração mudam.
+
+Hooks que corrigem sozinhos (formatação, espaços) aplicam a correção e param o commit para
+você revisar: confira, faça `git add` de novo e repita o commit.
+
+Instalação, uma vez por clone:
+
+```powershell
+pip install -r requirements-dev.txt
+pre-commit install
+```
+
+Para rodar tudo sem commitar: `pre-commit run --all-files`. Migrations geradas pelo Alembic
+já saem formatadas pelo ruff (`post_write_hooks` no `alembic.ini`).

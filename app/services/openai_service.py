@@ -55,8 +55,9 @@ Regras:
             response = self.client.responses.create(
                 model=settings.openai_model,
                 instructions=(
-                    "Você é um copywriter especialista em vendas para WhatsApp e Telegram. "
-                    "Escreva mensagens curtas, naturais e persuasivas para o público brasileiro."
+                    "Você é um copywriter especialista em vendas para WhatsApp "
+                    "e Telegram. Escreva mensagens curtas, naturais e "
+                    "persuasivas para o público brasileiro."
                 ),
                 input=prompt,
                 max_output_tokens=settings.openai_max_output_tokens,

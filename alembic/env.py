@@ -7,8 +7,9 @@ running application can never disagree about which database they target.
 
 from logging.config import fileConfig
 
-from alembic import context
 from sqlalchemy import create_engine, pool
+
+from alembic import context
 
 # alembic.ini sets `prepend_sys_path = .`, which puts the project root on
 # sys.path and makes the `app` package importable from here.

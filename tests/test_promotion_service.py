@@ -22,7 +22,7 @@ def test_insert_lost_to_a_concurrent_run_counts_as_duplicate():
     amazon.fetch_promotions.return_value = [candidate()]
     repository = MagicMock()
     repository.has_open_or_recent.return_value = False
-    repository.save_unless_duplicate.return_value = False   # the index said no
+    repository.save_unless_duplicate.return_value = False  # the index said no
 
     result = PromotionService(amazon, repository).collect_pending_promotions()
 

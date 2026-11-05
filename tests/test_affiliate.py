@@ -78,7 +78,7 @@ def test_long_copy_is_shortened_and_link_survives():
 
 
 def test_emoji_count_as_two_units_against_the_limit():
-    message = compose_with_link("\U0001F525" * 1000, LINK, 1024)
+    message = compose_with_link("\U0001f525" * 1000, LINK, 1024)
 
     assert message.endswith(LINK)
     assert utf16_len(message) <= 1024

@@ -1,0 +1,38 @@
+# Tool configuration only. Dependencies live in requirements.txt and
+# requirements-dev.txt.
+
+[tool.ruff]
+target-version = "py313"
+line-length = 88
+
+[tool.ruff.lint]
+select = [
+    "E", "W",  # pycodestyle
+    "F",       # pyflakes: unused imports, undefined names
+    "I",       # import order
+    "B",       # bugbear: likely bugs
+    "UP",      # pyupgrade: modern syntax for the target version
+    "S",       # bandit: security smells (hardcoded secrets, binding to 0.0.0.0, ...)
+    "SIM",     # simplifications
+    "C4",      # comprehensions
+    "RUF",     # ruff-specific
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Revision scripts import op and sa by convention, before anything uses them.
+"alembic/versions/**" = ["F401"]
+"tests/**" = [
+    "S101",          # pytest is built on assert
+    "S105", "S106",  # fake credentials are the point of these tests
+]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI declares dependencies as calls in default arguments by design.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Security"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = [
+    "integration: needs the test Postgres database (docker compose up -d)",
+]

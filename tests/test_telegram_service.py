@@ -23,7 +23,9 @@ def ok_response() -> MagicMock:
 
 
 def test_photo_caption_keeps_the_link_when_copy_is_long():
-    with patch("app.services.telegram_service.httpx.post", return_value=ok_response()) as post:
+    with patch(
+        "app.services.telegram_service.httpx.post", return_value=ok_response()
+    ) as post:
         TelegramService().send_promotion(message="a" * 3000, link=LINK, image_url=IMAGE)
 
     caption = post.call_args.kwargs["json"]["caption"]
@@ -43,7 +45,9 @@ def test_text_fallback_also_carries_the_link():
 
 
 def test_without_image_sends_text_with_link():
-    with patch("app.services.telegram_service.httpx.post", return_value=ok_response()) as post:
+    with patch(
+        "app.services.telegram_service.httpx.post", return_value=ok_response()
+    ) as post:
         TelegramService().send_promotion(message="Oferta", link=LINK)
 
     assert post.call_count == 1

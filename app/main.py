@@ -7,11 +7,13 @@ from app.api.routers.promotion_router import router as promotions_router
 from app.core.config import settings
 from app.scheduler.jobs import start_scheduler, stop_scheduler
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     start_scheduler()
     yield
     stop_scheduler()
+
 
 app = FastAPI(
     title=settings.app_name,
@@ -30,12 +32,13 @@ def root():
         "health": "/health",
     }
 
+
 if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(
         "app.main:app",
-        host="0.0.0.0",
+        host="127.0.0.1",
         port=8000,
         reload=True,
     )

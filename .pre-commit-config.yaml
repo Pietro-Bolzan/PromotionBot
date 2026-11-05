@@ -1,0 +1,47 @@
+# Checks that run on every `git commit` and block it when something fails.
+# Install once per clone:  pre-commit install
+# Run on demand:           pre-commit run --all-files
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+      - id: debug-statements     # breakpoint() / pdb left behind
+      - id: detect-private-key
+
+  # Same version as ruff in requirements-dev.txt, so the editor and the commit
+  # check agree.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.4
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: forbid-env-files
+        name: forbid .env files (only .env.example may be committed)
+        entry: ".env files hold real credentials and must never be committed"
+        language: fail
+        files: (^|/)\.env(\..+)?$
+        exclude: (^|/)\.env\.example$
+
+      - id: forbid-api-secrets
+        name: forbid OpenAI keys and Telegram bot tokens
+        # OpenAI keys: sk-, sk-proj-, sk-svcacct-, sk-admin- followed by a long
+        # random part. Telegram tokens: <bot id>:AA<33 characters>.
+        entry: '(sk-(proj-|svcacct-|admin-)?[A-Za-z0-9_-]{32,}|\b[0-9]{8,10}:AA[A-Za-z0-9_-]{33}\b)'
+        language: pygrep
+
+      - id: pytest
+        name: pytest
+        entry: python scripts/run_tests.py
+        language: python
+        pass_filenames: false
+        files: \.(py|toml|ini)$|^requirements

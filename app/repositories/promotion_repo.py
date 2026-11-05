@@ -12,7 +12,6 @@ class PromotionRepository:
     def __init__(self, db: Session):
         self.db = db
 
-
     def has_open_or_recent(self, asin: str, cutoff: datetime) -> bool:
         """Whether this ASIN must not be collected again right now.
 
@@ -31,12 +30,11 @@ class PromotionRepository:
 
         return self.db.execute(statement).first() is not None
 
-
     def save(self, promotion: Promotion) -> Promotion:
         self.db.add(promotion)
         self.db.commit()
         self.db.refresh(promotion)
-        
+
         return promotion
 
     def save_unless_duplicate(self, promotion: Promotion) -> bool:
@@ -54,8 +52,7 @@ class PromotionRepository:
             raise
 
         return True
-    
-    
+
     def list_all(self, limit: int = 20, offset: int = 0) -> list[Promotion]:
         statement = (
             select(Promotion)
@@ -64,12 +61,10 @@ class PromotionRepository:
             .offset(offset)
         )
         return list(self.db.scalars(statement).all())
-    
-    
+
     def get_by_id(self, promotion_id: UUID) -> Promotion | None:
         return self.db.get(Promotion, promotion_id)
-    
-    
+
     def update_generated_message(
         self,
         promotion: Promotion,
@@ -89,7 +84,7 @@ class PromotionRepository:
         self.db.refresh(promotion)
 
         return promotion
-    
+
     def rollback(self) -> None:
         self.db.rollback()
 
@@ -107,14 +102,15 @@ class PromotionRepository:
         """
         promotion.attempts = attempts
         promotion.last_error = error
-        promotion.status = PromotionStatus.FAILED if give_up else PromotionStatus.PENDING
+        promotion.status = (
+            PromotionStatus.FAILED if give_up else PromotionStatus.PENDING
+        )
 
         self.db.commit()
         self.db.refresh(promotion)
 
         return promotion
-    
-    
+
     def list_pending(self, limit: int = 10) -> list[Promotion]:
         statement = (
             select(Promotion)

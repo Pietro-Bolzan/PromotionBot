@@ -5,25 +5,29 @@ Revises: ccf55b7bb21d
 Create Date: 2026-11-05 19:37:33.604129
 
 """
-from typing import Sequence, Union
 
-from alembic import op
+from collections.abc import Sequence
+
 import sqlalchemy as sa
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = '557676fdb242'
-down_revision: Union[str, Sequence[str], None] = 'ccf55b7bb21d'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+revision: str = "557676fdb242"
+down_revision: str | Sequence[str] | None = "ccf55b7bb21d"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 PENDING_ONLY = sa.text("status = 'PENDING'")
 
 
 def upgrade() -> None:
     """Upgrade schema."""
-    op.add_column('promotions', sa.Column('attempts', sa.Integer(), server_default='0', nullable=False))
-    op.add_column('promotions', sa.Column('last_error', sa.Text(), nullable=True))
+    op.add_column(
+        "promotions",
+        sa.Column("attempts", sa.Integer(), server_default="0", nullable=False),
+    )
+    op.add_column("promotions", sa.Column("last_error", sa.Text(), nullable=True))
 
     # Before this migration there were no retries: every row already SENT or
     # FAILED was tried exactly once.
@@ -49,13 +53,33 @@ def upgrade() -> None:
         """
     )
 
-    op.create_index('ix_promotions_pending_created_at', 'promotions', ['created_at'], unique=False, postgresql_where=PENDING_ONLY)
-    op.create_index('uq_promotions_pending_asin', 'promotions', ['asin'], unique=True, postgresql_where=PENDING_ONLY)
+    op.create_index(
+        "ix_promotions_pending_created_at",
+        "promotions",
+        ["created_at"],
+        unique=False,
+        postgresql_where=PENDING_ONLY,
+    )
+    op.create_index(
+        "uq_promotions_pending_asin",
+        "promotions",
+        ["asin"],
+        unique=True,
+        postgresql_where=PENDING_ONLY,
+    )
 
 
 def downgrade() -> None:
     """Downgrade schema."""
-    op.drop_index('uq_promotions_pending_asin', table_name='promotions', postgresql_where=PENDING_ONLY)
-    op.drop_index('ix_promotions_pending_created_at', table_name='promotions', postgresql_where=PENDING_ONLY)
-    op.drop_column('promotions', 'last_error')
-    op.drop_column('promotions', 'attempts')
+    op.drop_index(
+        "uq_promotions_pending_asin",
+        table_name="promotions",
+        postgresql_where=PENDING_ONLY,
+    )
+    op.drop_index(
+        "ix_promotions_pending_created_at",
+        table_name="promotions",
+        postgresql_where=PENDING_ONLY,
+    )
+    op.drop_column("promotions", "last_error")
+    op.drop_column("promotions", "attempts")

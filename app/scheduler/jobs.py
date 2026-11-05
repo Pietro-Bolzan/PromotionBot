@@ -1,17 +1,19 @@
+import logging
+
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from app.core.config import settings
 from app.db.database import SessionLocal
 from app.repositories.promotion_repo import PromotionRepository
-from app.services.openai_service import OpenAIService
-from app.services.promotion_service import PromotionService
-from app.services.promotion_delivery_service import PromotionDeliveryService
-from app.services.telegram_service import TelegramService
 from app.services.amazon_service import AmazonService
-import logging
+from app.services.openai_service import OpenAIService
+from app.services.promotion_delivery_service import PromotionDeliveryService
+from app.services.promotion_service import PromotionService
+from app.services.telegram_service import TelegramService
 
 scheduler = BackgroundScheduler()
 logger = logging.getLogger(__name__)
+
 
 def process_pending_promotions() -> None:
     with SessionLocal() as db:
@@ -49,8 +51,8 @@ def start_scheduler() -> None:
 def stop_scheduler() -> None:
     if scheduler.running:
         scheduler.shutdown()
-        
-        
+
+
 def process_promotion_cycle() -> None:
     logger.info("Starting promotion cycle")
 
@@ -66,7 +68,8 @@ def process_promotion_cycle() -> None:
             collection_result = promotion_service.collect_pending_promotions()
 
             logger.info(
-                "Promotion collection finished: fetched=%s saved=%s duplicates_skipped=%s",
+                "Promotion collection finished: "
+                "fetched=%s saved=%s duplicates_skipped=%s",
                 collection_result["fetched"],
                 collection_result["saved"],
                 collection_result["duplicates_skipped"],

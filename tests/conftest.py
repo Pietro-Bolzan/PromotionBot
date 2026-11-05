@@ -73,11 +73,11 @@ def test_engine():
     Starting from an empty database every run also proves that the whole
     migration chain applies cleanly, not only the latest migration.
     """
-    from alembic import command
     from alembic.config import Config
     from sqlalchemy import create_engine, text
     from sqlalchemy.exc import OperationalError
 
+    from alembic import command
     from app.db.database import engine
 
     url = make_url(TEST_DATABASE_URL)
@@ -95,7 +95,9 @@ def test_engine():
     try:
         with admin.connect() as connection:
             # The name was checked to end in "_test" when this module loaded.
-            connection.execute(text(f'DROP DATABASE IF EXISTS "{url.database}" WITH (FORCE)'))
+            connection.execute(
+                text(f'DROP DATABASE IF EXISTS "{url.database}" WITH (FORCE)')
+            )
             connection.execute(text(f'CREATE DATABASE "{url.database}"'))
     except OperationalError:
         pytest.skip("test database unavailable; start it with: docker compose up -d")

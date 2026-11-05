@@ -19,7 +19,6 @@ from app.services.promotion_delivery_service import PromotionDeliveryService
 from app.services.promotion_service import PromotionService
 from app.services.telegram_service import TelegramService
 
-
 # Authentication is declared on the router, so every route here is protected by
 # default -- including routes added later. Exposing something publicly requires
 # deliberately moving it out of this router.
@@ -34,9 +33,7 @@ router = APIRouter(
     "/run",
     response_model=PromotionProcessingResult,
 )
-def run_promotions(
-    db: Session = Depends(get_db)
-):
+def run_promotions(db: Session = Depends(get_db)):
     amazon_service = AmazonService()
     promotion_repository = PromotionRepository(db)
     promotion_service = PromotionService(
@@ -46,10 +43,8 @@ def run_promotions(
 
     return promotion_service.collect_pending_promotions()
 
-@router.post(
-    "/{promotion_id}/generate-copy",
-    response_model=GeneratedCopyResponse
-)
+
+@router.post("/{promotion_id}/generate-copy", response_model=GeneratedCopyResponse)
 def generate_promotion_copy(
     promotion_id: UUID,
     db: Session = Depends(get_db),
@@ -65,7 +60,7 @@ def generate_promotion_copy(
 
     openai_service = OpenAIService()
     message = openai_service.generate_sales_copy(promotion)
-    
+
     promotion_repository.update_generated_message(
         promotion=promotion,
         generated_message=message,
@@ -76,10 +71,7 @@ def generate_promotion_copy(
     )
 
 
-@router.get(
-    "",
-    response_model=list[PromotionResponse]
-)
+@router.get("", response_model=list[PromotionResponse])
 def list_promotions(
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
@@ -88,8 +80,9 @@ def list_promotions(
     promotion_repository = PromotionRepository(db)
     return promotion_repository.list_all(limit=limit, offset=offset)
 
+
 @router.post(
-    "/{promotion_id}/send-telegram", 
+    "/{promotion_id}/send-telegram",
     response_model=PromotionDeliveryResponse,
 )
 def send_promotion_to_telegram(
@@ -118,7 +111,8 @@ def send_promotion_to_telegram(
         status=delivered_promotion.status.value,
         message="Promotion sent to Telegram",
     )
-    
+
+
 @router.post(
     "/send-pending-telegram",
     response_model=PendingDeliveryResponse,
@@ -136,4 +130,3 @@ def send_pending_promotions_to_telegram(
     )
 
     return delivery_service.deliver_pending_to_telegram(limit=limit)
-

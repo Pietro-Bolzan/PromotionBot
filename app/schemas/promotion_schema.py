@@ -1,7 +1,9 @@
-from decimal import Decimal
 from datetime import datetime
+from decimal import Decimal
 from uuid import UUID
+
 from pydantic import BaseModel, Field, HttpUrl
+
 from app.models.promotions import PromotionStatus
 
 
@@ -15,7 +17,8 @@ class PromotionCandidate(BaseModel):
     image_url: HttpUrl | None = None
     category: str = Field(min_length=1, max_length=120)
     rating: Decimal | None = Field(default=None, ge=0, le=5)
-    
+
+
 class PromotionResponse(BaseModel):
     id: UUID
     asin: str
@@ -35,24 +38,26 @@ class PromotionResponse(BaseModel):
     updated_at: datetime
     generated_message: str | None
 
-    model_config = {
-        "from_attributes": True
-    }
-    
+    model_config = {"from_attributes": True}
+
+
 class PromotionProcessingResult(BaseModel):
     fetched: int
     saved: int
     duplicates_skipped: int
-    
+
+
 class GeneratedCopyResponse(BaseModel):
     promotion_id: UUID
     message: str
-    
+
+
 class PromotionDeliveryResponse(BaseModel):
     promotion_id: UUID
     status: str
     message: str
-    
+
+
 class PendingDeliveryResponse(BaseModel):
     processed: int
     sent: int
