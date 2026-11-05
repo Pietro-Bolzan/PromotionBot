@@ -49,3 +49,6 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_promotions_asin'), table_name='promotions')
     op.drop_table('promotions')
     # ### end Alembic commands ###
+    # drop_table() leaves behind the enum type create_table() created, and the
+    # next upgrade would then fail with "type promotionstatus already exists".
+    sa.Enum(name='promotionstatus').drop(op.get_bind(), checkfirst=True)

@@ -22,16 +22,10 @@ class PromotionService:
         duplicates_skipped = 0
 
         for candidate in candidates:
-            already_sent = self.promotion_repository.exists_recently_sent(
+            if self.promotion_repository.has_open_or_recent(
                 asin=candidate.asin,
                 cutoff=cutoff,
-            )
-            already_pending = self.promotion_repository.exists_recently_pending(
-                asin=candidate.asin,
-                cutoff=cutoff,
-            )
-
-            if already_sent or already_pending:
+            ):
                 duplicates_skipped += 1
                 continue
 
@@ -48,8 +42,10 @@ class PromotionService:
                 status=PromotionStatus.PENDING,
             )
 
-            self.promotion_repository.save(promotion)
-            saved += 1
+            if self.promotion_repository.save_unless_duplicate(promotion):
+                saved += 1
+            else:
+                duplicates_skipped += 1
 
         return {
             "fetched": len(candidates),

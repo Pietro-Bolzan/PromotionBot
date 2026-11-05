@@ -4,6 +4,7 @@ from contextlib import suppress
 from sqlalchemy import inspect
 
 from app.core.config import settings
+from app.core.security import mask_secrets
 from app.models.promotions import Promotion
 from app.repositories.promotion_repo import PromotionRepository
 from app.services.affiliate import build_affiliate_url
@@ -11,6 +12,8 @@ from app.services.openai_service import OpenAIService
 from app.services.telegram_service import TelegramService
 
 logger = logging.getLogger(__name__)
+
+MAX_ERROR_LENGTH = 1000
 
 
 class PromotionDeliveryService:
@@ -26,6 +29,7 @@ class PromotionDeliveryService:
 
     def deliver_to_telegram(self, promotion: Promotion) -> Promotion:
         self._require_partner_tag()
+        delivered = False
 
         try:
             # Built before the copy so an invalid product URL fails without
@@ -49,10 +53,19 @@ class PromotionDeliveryService:
                 link=affiliate_url,
                 image_url=promotion.image_url,
             )
+            delivered = True
             return self.promotion_repository.mark_as_sent(promotion)
 
-        except Exception:
-            self._mark_as_failed(promotion)
+        except Exception as error:
+            if not delivered:
+                self._record_failure(promotion, error)
+                raise
+
+            # Telegram already accepted the message: putting it back in the
+            # queue would post it twice, so the only option is recording it as
+            # sent.
+            if self._record_sent_after_error(promotion):
+                return promotion
             raise
 
     def deliver_pending_to_telegram(self, limit: int = 10) -> dict:
@@ -76,25 +89,52 @@ class PromotionDeliveryService:
             "failed": failed,
         }
 
-    def _mark_as_failed(self, promotion: Promotion) -> None:
+    def _record_failure(self, promotion: Promotion, error: Exception) -> None:
         # The original error may have come from the database, leaving the
         # session unusable until it is rolled back: without the rollback, the
         # commit below would raise PendingRollbackError, hide the real cause,
         # and poison every promotion processed after this one in the batch.
-        # If marking still fails, it is only logged, so the caller always
+        # If recording still fails, it is only logged, so the caller always
         # receives the original exception.
         try:
             self.promotion_repository.rollback()
-            self.promotion_repository.mark_as_failed(promotion)
+            attempts = promotion.attempts + 1
+            self.promotion_repository.record_failure(
+                promotion,
+                attempts=attempts,
+                error=_describe_error(error),
+                give_up=attempts >= settings.delivery_max_attempts,
+            )
         except Exception:
             # inspect().identity reads the primary key kept in memory: unlike
             # promotion.id it never queries a database that may be failing.
             logger.exception(
-                "Could not mark promotion %s as FAILED",
+                "Could not record the failure of promotion %s",
                 inspect(promotion).identity,
             )
             with suppress(Exception):
                 self.promotion_repository.rollback()
+
+    def _record_sent_after_error(self, promotion: Promotion) -> bool:
+        try:
+            self.promotion_repository.rollback()
+            self.promotion_repository.mark_as_sent(promotion)
+        except Exception:
+            logger.critical(
+                "Promotion %s was delivered to Telegram but could not be "
+                "recorded as SENT; it is still PENDING and may be posted again",
+                inspect(promotion).identity,
+                exc_info=True,
+            )
+            with suppress(Exception):
+                self.promotion_repository.rollback()
+            return False
+
+        logger.warning(
+            "Promotion %s was recorded as SENT only on a second attempt",
+            inspect(promotion).identity,
+        )
+        return True
 
     @staticmethod
     def _require_partner_tag() -> None:
@@ -106,3 +146,8 @@ class PromotionDeliveryService:
                 "AMAZON_PARTNER_TAG is not configured; refusing to send links "
                 "that earn no commission"
             )
+
+
+def _describe_error(error: Exception) -> str:
+    # Stored in last_error and returned by the API: secrets must not survive.
+    return mask_secrets(f"{type(error).__name__}: {error}")[:MAX_ERROR_LENGTH]

@@ -42,8 +42,19 @@ Acesse:
 
 ```powershell
 pip install -r requirements-dev.txt
+docker compose up -d
 python -m pytest
 ```
 
-Os testes nunca acessam OpenAI, Telegram ou o banco real: `tests/conftest.py` substitui
-todas as credenciais por valores falsos antes de a aplicação ser importada.
+Os testes nunca acessam OpenAI, Telegram ou o seu banco de desenvolvimento:
+`tests/conftest.py` substitui todas as credenciais por valores falsos antes de a aplicação
+ser importada.
+
+Os testes marcados como `integration` rodam contra um Postgres de verdade, num banco
+separado (`amazonbot_test`) recriado e migrado do zero a cada execução — o que também prova
+que a cadeia inteira de migrations aplica num banco vazio. Sem o container de pé, eles são
+pulados e os demais rodam normalmente. Só os unitários:
+
+```powershell
+python -m pytest -m "not integration"
+```

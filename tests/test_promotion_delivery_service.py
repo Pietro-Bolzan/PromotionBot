@@ -1,5 +1,7 @@
+import logging
 from unittest.mock import MagicMock
 
+import httpx
 import pytest
 
 from app.core.config import settings
@@ -59,7 +61,7 @@ def test_missing_tag_refuses_before_spending_or_failing(
 
     openai_service.generate_sales_copy.assert_not_called()
     telegram_service.send_promotion.assert_not_called()
-    repository.mark_as_failed.assert_not_called()
+    repository.record_failure.assert_not_called()
     assert promotion.status == PromotionStatus.PENDING
 
 
@@ -83,7 +85,7 @@ def test_invalid_product_url_fails_without_calling_openai(
         delivery.deliver_to_telegram(promotion)
 
     openai_service.generate_sales_copy.assert_not_called()
-    repository.mark_as_failed.assert_called_once_with(promotion)
+    repository.record_failure.assert_called_once()
 
 
 def test_rolls_back_the_session_before_marking_as_failed(
@@ -95,7 +97,7 @@ def test_rolls_back_the_session_before_marking_as_failed(
         delivery.deliver_to_telegram(make_promotion())
 
     calls = [name for name, *_ in repository.mock_calls]
-    assert calls.index("rollback") < calls.index("mark_as_failed")
+    assert calls.index("rollback") < calls.index("record_failure")
 
 
 def test_original_error_reaches_the_caller_even_if_marking_fails(
@@ -104,12 +106,12 @@ def test_original_error_reaches_the_caller_even_if_marking_fails(
     # Regression: marking FAILED used to commit on a broken session, raising
     # PendingRollbackError and hiding the real cause from the caller.
     telegram_service.send_promotion.side_effect = ConnectionError("telegram down")
-    repository.mark_as_failed.side_effect = RuntimeError("database down")
+    repository.record_failure.side_effect = RuntimeError("database down")
 
     with pytest.raises(ConnectionError, match="telegram down"):
         delivery.deliver_to_telegram(make_promotion())
 
-    assert "Could not mark promotion" in caplog.text
+    assert "Could not record the failure" in caplog.text
 
 
 def test_one_failure_does_not_stop_the_rest_of_the_batch(
@@ -127,3 +129,75 @@ def test_one_failure_does_not_stop_the_rest_of_the_batch(
     result = delivery.deliver_pending_to_telegram()
 
     assert result == {"processed": 2, "sent": 1, "failed": 1}
+
+
+def test_failure_goes_back_to_the_queue_with_the_error(
+    delivery, repository, telegram_service, make_promotion
+):
+    telegram_service.send_promotion.side_effect = ConnectionError("telegram down")
+
+    with pytest.raises(ConnectionError):
+        delivery.deliver_to_telegram(make_promotion(attempts=0))
+
+    recorded = repository.record_failure.call_args.kwargs
+    assert recorded["attempts"] == 1
+    assert recorded["give_up"] is False
+    assert recorded["error"] == "ConnectionError: telegram down"
+
+
+def test_last_allowed_attempt_gives_up(
+    delivery, repository, telegram_service, make_promotion
+):
+    telegram_service.send_promotion.side_effect = ConnectionError("telegram down")
+
+    with pytest.raises(ConnectionError):
+        delivery.deliver_to_telegram(make_promotion(attempts=2))   # max is 3
+
+    recorded = repository.record_failure.call_args.kwargs
+    assert recorded["attempts"] == 3
+    assert recorded["give_up"] is True
+
+
+def test_stored_error_never_contains_the_bot_token(
+    delivery, repository, telegram_service, make_promotion, monkeypatch
+):
+    token = "123456789:AAH-secret_token"
+    monkeypatch.setattr(settings, "telegram_bot_token", token)
+    url = f"https://api.telegram.org/bot{token}/sendPhoto"
+    telegram_service.send_promotion.side_effect = httpx.HTTPStatusError(
+        f"Client error '400 Bad Request' for url '{url}'",
+        request=httpx.Request("POST", url),
+        response=httpx.Response(400),
+    )
+
+    with pytest.raises(httpx.HTTPStatusError):
+        delivery.deliver_to_telegram(make_promotion())
+
+    error = repository.record_failure.call_args.kwargs["error"]
+    assert "secret_token" not in error
+    assert "/bot***/" in error
+
+
+def test_message_accepted_by_telegram_is_never_requeued(
+    delivery, repository, make_promotion
+):
+    promotion = make_promotion()
+    repository.mark_as_sent.side_effect = [RuntimeError("database hiccup"), promotion]
+
+    assert delivery.deliver_to_telegram(promotion) is promotion
+
+    assert repository.mark_as_sent.call_count == 2
+    repository.record_failure.assert_not_called()
+
+
+def test_unrecordable_delivery_raises_without_requeueing(
+    delivery, repository, make_promotion, caplog
+):
+    repository.mark_as_sent.side_effect = RuntimeError("database down")
+
+    with caplog.at_level(logging.CRITICAL):
+        with pytest.raises(RuntimeError, match="database down"):
+            delivery.deliver_to_telegram(make_promotion())
+
+    repository.record_failure.assert_not_called()
+    assert "may be posted again" in caplog.text

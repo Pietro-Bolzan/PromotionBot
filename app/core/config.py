@@ -1,3 +1,4 @@
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from decimal import Decimal
 
@@ -24,5 +25,6 @@ class Settings(BaseSettings):
     scheduler_enabled: bool = False
     scheduler_interval_seconds: int = 600
     scheduler_delivery_limit: int = 5
+    delivery_max_attempts: int = Field(default=3, ge=1)
   
 settings = Settings()

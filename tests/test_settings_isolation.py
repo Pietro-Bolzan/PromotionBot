@@ -1,3 +1,5 @@
+from sqlalchemy.engine import make_url
+
 from app.core.config import settings
 
 
@@ -6,4 +8,4 @@ def test_tests_never_see_real_credentials():
     assert settings.openai_api_key == ""
     assert settings.telegram_bot_token == ""
     assert settings.telegram_chat_id == ""
-    assert settings.database_url.endswith("/test")
+    assert make_url(settings.database_url).database.endswith("_test")

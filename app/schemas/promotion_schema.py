@@ -28,6 +28,8 @@ class PromotionResponse(BaseModel):
     category: str
     rating: Decimal | None
     status: PromotionStatus
+    attempts: int
+    last_error: str | None
     sent_at: datetime | None
     created_at: datetime
     updated_at: datetime
