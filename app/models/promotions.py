@@ -1,6 +1,7 @@
 import enum
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy import DateTime, Enum, Numeric, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
@@ -35,17 +36,17 @@ class Promotion(Base):
       nullable=False
     )
     
-    original_price: Mapped[float] = mapped_column(
+    original_price: Mapped[Decimal] = mapped_column(
       Numeric(12, 2),
       nullable=False
     )
     
-    discounted_price: Mapped[float] = mapped_column(
+    discounted_price: Mapped[Decimal] = mapped_column(
       Numeric(12, 2),
       nullable=False
     )
     
-    discount_percentage: Mapped[float] = mapped_column(
+    discount_percentage: Mapped[Decimal] = mapped_column(
       Numeric(5, 2),
       nullable=False
     )
@@ -65,7 +66,7 @@ class Promotion(Base):
       nullable=False
     )
     
-    rating: Mapped[float | None] = mapped_column(
+    rating: Mapped[Decimal | None] = mapped_column(
       Numeric(3, 2),
       nullable=True
     )

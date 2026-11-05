@@ -72,6 +72,9 @@ class PromotionRepository:
 
         return promotion
     
+    def rollback(self) -> None:
+        self.db.rollback()
+
     def mark_as_failed(self, promotion: Promotion) -> Promotion:
         promotion.status = PromotionStatus.FAILED
 

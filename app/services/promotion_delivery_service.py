@@ -1,9 +1,16 @@
+import logging
+from contextlib import suppress
+
+from sqlalchemy import inspect
+
 from app.core.config import settings
 from app.models.promotions import Promotion
 from app.repositories.promotion_repo import PromotionRepository
 from app.services.affiliate import build_affiliate_url
 from app.services.openai_service import OpenAIService
 from app.services.telegram_service import TelegramService
+
+logger = logging.getLogger(__name__)
 
 
 class PromotionDeliveryService:
@@ -45,9 +52,9 @@ class PromotionDeliveryService:
             return self.promotion_repository.mark_as_sent(promotion)
 
         except Exception:
-            self.promotion_repository.mark_as_failed(promotion)
+            self._mark_as_failed(promotion)
             raise
-        
+
     def deliver_pending_to_telegram(self, limit: int = 10) -> dict:
         self._require_partner_tag()
 
@@ -68,6 +75,26 @@ class PromotionDeliveryService:
             "sent": sent,
             "failed": failed,
         }
+
+    def _mark_as_failed(self, promotion: Promotion) -> None:
+        # The original error may have come from the database, leaving the
+        # session unusable until it is rolled back: without the rollback, the
+        # commit below would raise PendingRollbackError, hide the real cause,
+        # and poison every promotion processed after this one in the batch.
+        # If marking still fails, it is only logged, so the caller always
+        # receives the original exception.
+        try:
+            self.promotion_repository.rollback()
+            self.promotion_repository.mark_as_failed(promotion)
+        except Exception:
+            # inspect().identity reads the primary key kept in memory: unlike
+            # promotion.id it never queries a database that may be failing.
+            logger.exception(
+                "Could not mark promotion %s as FAILED",
+                inspect(promotion).identity,
+            )
+            with suppress(Exception):
+                self.promotion_repository.rollback()
 
     @staticmethod
     def _require_partner_tag() -> None:
