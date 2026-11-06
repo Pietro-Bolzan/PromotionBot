@@ -5,6 +5,7 @@ from openai import APIStatusError, OpenAI, OpenAIError
 from app.core.config import settings
 from app.core.security import describe_error
 from app.models.promotions import Promotion
+from app.services.formatting import format_brl, format_discount
 
 logger = logging.getLogger(__name__)
 
@@ -39,9 +40,9 @@ class OpenAIService:
 Crie uma mensagem de venda curta, direta e persuasiva em português brasileiro.
 
 Produto: {promotion.title}
-Preço original: R$ {promotion.original_price}
-Preço com desconto: R$ {promotion.discounted_price}
-Desconto: {promotion.discount_percentage}%
+Preço original: {format_brl(promotion.original_price)}
+Preço com desconto: {format_brl(promotion.discounted_price)}
+Desconto: {format_discount(promotion.discount_percentage)}
 Categoria: {promotion.category}
 
 Regras:
@@ -92,8 +93,10 @@ Regras:
         return copy
 
     def _fallback_message(self, promotion: Promotion) -> str:
+        original = format_brl(promotion.original_price)
+        discounted = format_brl(promotion.discounted_price)
         return (
             f"Oferta encontrada: {promotion.title}\n"
-            f"De R$ {promotion.original_price} por R$ {promotion.discounted_price}\n"
-            f"Desconto de {promotion.discount_percentage}%"
+            f"De {original} por {discounted}\n"
+            f"Desconto de {format_discount(promotion.discount_percentage)}"
         )
