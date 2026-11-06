@@ -7,27 +7,18 @@ from app.db.database import SessionLocal
 from app.repositories.promotion_repo import PromotionRepository
 from app.services.amazon_service import AmazonService
 from app.services.openai_service import OpenAIService
-from app.services.promotion_delivery_service import PromotionDeliveryService
+from app.services.promotion_delivery_service import (
+    DeliveryInProgressError,
+    PromotionDeliveryService,
+)
 from app.services.promotion_service import PromotionService
 from app.services.telegram_service import TelegramService
 
-scheduler = BackgroundScheduler()
 logger = logging.getLogger(__name__)
 
-
-def process_pending_promotions() -> None:
-    with SessionLocal() as db:
-        promotion_repository = PromotionRepository(db)
-
-        delivery_service = PromotionDeliveryService(
-            promotion_repository=promotion_repository,
-            openai_service=OpenAIService(),
-            telegram_service=TelegramService(),
-        )
-
-        delivery_service.deliver_pending_to_telegram(
-            limit=settings.scheduler_delivery_limit
-        )
+# Explicit time zone: otherwise scheduled times follow the host clock, which
+# differs between a developer machine and a server running in UTC.
+scheduler = BackgroundScheduler(timezone=settings.scheduler_timezone)
 
 
 def start_scheduler() -> None:
@@ -43,6 +34,11 @@ def start_scheduler() -> None:
         seconds=settings.scheduler_interval_seconds,
         id="process_promotion_cycle",
         replace_existing=True,
+        # APScheduler's current defaults, stated so they cannot change
+        # silently: never two runs of this job at once, and runs missed while
+        # one was busy collapse into a single one.
+        max_instances=1,
+        coalesce=True,
     )
 
     scheduler.start()
@@ -81,9 +77,15 @@ def process_promotion_cycle() -> None:
                 telegram_service=TelegramService(),
             )
 
-            delivery_result = delivery_service.deliver_pending_to_telegram(
-                limit=settings.scheduler_delivery_limit
-            )
+            try:
+                delivery_result = delivery_service.deliver_pending_to_telegram(
+                    limit=settings.scheduler_delivery_limit
+                )
+            except DeliveryInProgressError:
+                # A manual delivery or another process is sending right now;
+                # the pending promotions stay queued for the next cycle.
+                logger.info("Promotion delivery skipped: another one is in progress")
+                return
 
             logger.info(
                 "Promotion delivery finished: processed=%s sent=%s failed=%s",
@@ -93,5 +95,5 @@ def process_promotion_cycle() -> None:
             )
 
     except Exception:
+        # Logged and not re-raised: APScheduler would only log it a second time.
         logger.exception("Promotion cycle failed")
-        raise

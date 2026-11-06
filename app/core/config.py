@@ -1,6 +1,7 @@
 from decimal import Decimal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -28,7 +29,17 @@ class Settings(BaseSettings):
     scheduler_enabled: bool = False
     scheduler_interval_seconds: int = 600
     scheduler_delivery_limit: int = 5
+    scheduler_timezone: str = "America/Sao_Paulo"
     delivery_max_attempts: int = Field(default=3, ge=1)
+
+    @field_validator("scheduler_timezone")
+    @classmethod
+    def _known_timezone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as error:
+            raise ValueError(f"unknown timezone: {value!r}") from error
+        return value
 
 
 settings = Settings()

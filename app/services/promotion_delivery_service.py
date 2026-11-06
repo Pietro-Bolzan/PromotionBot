@@ -1,17 +1,26 @@
 import logging
-from contextlib import suppress
+from collections.abc import Iterator
+from contextlib import contextmanager, suppress
 
 from sqlalchemy import inspect
 
 from app.core.config import settings
 from app.core.security import describe_error
-from app.models.promotions import Promotion
+from app.models.promotions import Promotion, PromotionStatus
 from app.repositories.promotion_repo import PromotionRepository
 from app.services.affiliate import build_affiliate_url
 from app.services.openai_service import OpenAIService
 from app.services.telegram_service import TelegramService
 
 logger = logging.getLogger(__name__)
+
+
+class DeliveryInProgressError(RuntimeError):
+    """Another delivery is running, in this process or in another one."""
+
+
+class PromotionAlreadySentError(RuntimeError):
+    """Sending the promotion again would post it twice."""
 
 
 class PromotionDeliveryService:
@@ -27,6 +36,50 @@ class PromotionDeliveryService:
 
     def deliver_to_telegram(self, promotion: Promotion) -> Promotion:
         self._require_partner_tag()
+
+        with self._exclusive_delivery():
+            # Read again under the lock: a batch may have sent it after the
+            # caller loaded it.
+            self.promotion_repository.refresh(promotion)
+            if promotion.status == PromotionStatus.SENT:
+                raise PromotionAlreadySentError(
+                    f"Promotion {promotion.id} was already sent"
+                )
+            return self._deliver(promotion)
+
+    def deliver_pending_to_telegram(self, limit: int = 10) -> dict:
+        self._require_partner_tag()
+
+        with self._exclusive_delivery():
+            promotions = self.promotion_repository.list_pending(limit=limit)
+
+            sent = 0
+            failed = 0
+
+            for promotion in promotions:
+                try:
+                    self._deliver(promotion)
+                    sent += 1
+                except Exception:
+                    failed += 1
+
+        return {
+            "processed": len(promotions),
+            "sent": sent,
+            "failed": failed,
+        }
+
+    @contextmanager
+    def _exclusive_delivery(self) -> Iterator[None]:
+        # Two deliveries reading the same PENDING rows would post them twice:
+        # the scheduler, the manual routes and other app processes all go
+        # through this lock.
+        with self.promotion_repository.delivery_lock() as acquired:
+            if not acquired:
+                raise DeliveryInProgressError("Another delivery is in progress")
+            yield
+
+    def _deliver(self, promotion: Promotion) -> Promotion:
         delivered = False
 
         try:
@@ -65,27 +118,6 @@ class PromotionDeliveryService:
             if self._record_sent_after_error(promotion):
                 return promotion
             raise
-
-    def deliver_pending_to_telegram(self, limit: int = 10) -> dict:
-        self._require_partner_tag()
-
-        promotions = self.promotion_repository.list_pending(limit=limit)
-
-        sent = 0
-        failed = 0
-
-        for promotion in promotions:
-            try:
-                self.deliver_to_telegram(promotion)
-                sent += 1
-            except Exception:
-                failed += 1
-
-        return {
-            "processed": len(promotions),
-            "sent": sent,
-            "failed": failed,
-        }
 
     def _record_failure(self, promotion: Promotion, error: Exception) -> None:
         # The original error may have come from the database, leaving the

@@ -1,4 +1,5 @@
 import logging
+from contextlib import nullcontext
 from unittest.mock import MagicMock
 
 import httpx
@@ -8,7 +9,11 @@ import pytest
 from app.core.config import settings
 from app.models.promotions import PromotionStatus
 from app.services.openai_service import OpenAIService
-from app.services.promotion_delivery_service import PromotionDeliveryService
+from app.services.promotion_delivery_service import (
+    DeliveryInProgressError,
+    PromotionAlreadySentError,
+    PromotionDeliveryService,
+)
 
 
 @pytest.fixture
@@ -230,3 +235,33 @@ def test_openai_outage_still_delivers_the_promotion(
     assert telegram_service.send_promotion.call_args.kwargs["message"].startswith(
         "Oferta encontrada"
     )
+
+
+def test_busy_lock_refuses_the_batch_before_reading_pending(delivery, repository):
+    repository.delivery_lock.return_value = nullcontext(False)
+
+    with pytest.raises(DeliveryInProgressError):
+        delivery.deliver_pending_to_telegram()
+
+    repository.list_pending.assert_not_called()
+
+
+def test_busy_lock_refuses_a_single_delivery_without_touching_it(
+    delivery, repository, telegram_service, make_promotion
+):
+    repository.delivery_lock.return_value = nullcontext(False)
+
+    with pytest.raises(DeliveryInProgressError):
+        delivery.deliver_to_telegram(make_promotion())
+
+    telegram_service.send_promotion.assert_not_called()
+    repository.record_failure.assert_not_called()
+
+
+def test_already_sent_promotion_is_not_sent_again(
+    delivery, telegram_service, make_promotion
+):
+    with pytest.raises(PromotionAlreadySentError):
+        delivery.deliver_to_telegram(make_promotion(status=PromotionStatus.SENT))
+
+    telegram_service.send_promotion.assert_not_called()

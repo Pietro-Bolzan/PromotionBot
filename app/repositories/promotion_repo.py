@@ -1,11 +1,17 @@
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.promotions import Promotion, PromotionStatus
+
+# Fixed, arbitrary key that identifies the delivery lock among the advisory
+# locks of this database (shown in pg_locks).
+DELIVERY_LOCK_KEY = 4_216_001
 
 
 class PromotionRepository:
@@ -87,6 +93,26 @@ class PromotionRepository:
 
     def rollback(self) -> None:
         self.db.rollback()
+
+    def refresh(self, promotion: Promotion) -> None:
+        self.db.refresh(promotion)
+
+    @contextmanager
+    def delivery_lock(self) -> Iterator[bool]:
+        """Try to become the only delivery running; yields whether it did.
+
+        A Postgres advisory lock, so it excludes deliveries in other threads,
+        processes and machines alike. It lives in the transaction of a
+        dedicated connection: released when the block ends, or by Postgres
+        itself if the process dies, so it can never be left behind.
+        """
+        engine = self.db.get_bind().engine
+        with engine.connect() as connection, connection.begin():
+            yield bool(
+                connection.scalar(
+                    select(func.pg_try_advisory_xact_lock(DELIVERY_LOCK_KEY))
+                )
+            )
 
     def record_failure(
         self,
