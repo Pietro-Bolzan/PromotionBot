@@ -25,6 +25,7 @@ scheduler = BackgroundScheduler(timezone=settings.scheduler_timezone)
 
 def start_scheduler() -> None:
     if not settings.scheduler_enabled:
+        logger.info("Scheduler disabled (SCHEDULER_ENABLED=false)")
         return
 
     if scheduler.running:
@@ -44,6 +45,11 @@ def start_scheduler() -> None:
     )
 
     scheduler.start()
+    logger.info(
+        "Scheduler started: every %ss, time zone %s",
+        settings.scheduler_interval_seconds,
+        settings.scheduler_timezone,
+    )
 
 
 def stop_scheduler() -> None:

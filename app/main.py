@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from app.api.routers.health import router as health_router
 from app.api.routers.promotion_router import router as promotions_router
 from app.core.config import settings
+from app.core.logging_config import configure_logging
 from app.scheduler.jobs import start_scheduler, stop_scheduler
 from app.services.promotion_delivery_service import (
     DeliveryInProgressError,
@@ -15,6 +16,7 @@ from app.services.promotion_delivery_service import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    configure_logging(settings.log_level)
     start_scheduler()
     yield
     stop_scheduler()

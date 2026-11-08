@@ -1,3 +1,4 @@
+import logging
 from decimal import Decimal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -23,6 +24,7 @@ class Settings(BaseSettings):
     # --- application ---
     app_name: str = "Amazon Bot"
     environment: str = "local"
+    log_level: str = "INFO"
 
     # --- database ---
     database_url: str
@@ -52,6 +54,14 @@ class Settings(BaseSettings):
 
     # --- delivery ---
     delivery_max_attempts: int = Field(default=3, ge=1)
+
+    @field_validator("log_level")
+    @classmethod
+    def _known_log_level(cls, value: str) -> str:
+        level = value.upper()
+        if level not in logging.getLevelNamesMapping():
+            raise ValueError(f"unknown log level: {value!r}")
+        return level
 
     @field_validator("scheduler_timezone")
     @classmethod
