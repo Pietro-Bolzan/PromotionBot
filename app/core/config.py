@@ -1,5 +1,6 @@
 import logging
 from decimal import Decimal
+from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import Field, field_validator
@@ -25,6 +26,7 @@ class Settings(BaseSettings):
     app_name: str = "Amazon Bot"
     environment: str = "local"
     log_level: str = "INFO"
+    log_format: Literal["text", "json"] = "text"
 
     # --- database ---
     database_url: str

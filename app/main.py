@@ -7,6 +7,7 @@ from app.api.routers.health import router as health_router
 from app.api.routers.promotion_router import router as promotions_router
 from app.core.config import settings
 from app.core.logging_config import configure_logging
+from app.core.request_context import RequestIdMiddleware
 from app.scheduler.jobs import start_scheduler, stop_scheduler
 from app.services.promotion_delivery_service import (
     DeliveryInProgressError,
@@ -16,7 +17,7 @@ from app.services.promotion_delivery_service import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    configure_logging(settings.log_level)
+    configure_logging(settings.log_level, settings.log_format)
     start_scheduler()
     yield
     stop_scheduler()
@@ -26,6 +27,7 @@ app = FastAPI(
     title=settings.app_name,
     lifespan=lifespan,
 )
+app.add_middleware(RequestIdMiddleware)
 
 app.include_router(health_router)
 app.include_router(promotions_router)

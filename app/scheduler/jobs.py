@@ -3,6 +3,7 @@ import logging
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from app.core.config import settings
+from app.core.request_context import new_request_id, request_id_var
 from app.db.database import SessionLocal
 from app.dependencies import (
     get_amazon_service,
@@ -58,6 +59,15 @@ def stop_scheduler() -> None:
 
 
 def process_promotion_cycle() -> None:
+    # Every log line of one cycle shares an id, the way a request's lines do.
+    token = request_id_var.set(new_request_id("cycle-"))
+    try:
+        _run_promotion_cycle()
+    finally:
+        request_id_var.reset(token)
+
+
+def _run_promotion_cycle() -> None:
     logger.info("Starting promotion cycle")
 
     try:
