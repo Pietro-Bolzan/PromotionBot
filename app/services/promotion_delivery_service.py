@@ -8,6 +8,7 @@ from app.core.config import settings
 from app.core.security import describe_error
 from app.models.promotions import Promotion, PromotionStatus
 from app.repositories.promotion_repo import PromotionRepository
+from app.schemas.promotion_schema import PendingDeliveryResponse
 from app.services.affiliate import build_affiliate_url
 from app.services.openai_service import OpenAIService
 from app.services.telegram_service import TelegramService
@@ -47,7 +48,7 @@ class PromotionDeliveryService:
                 )
             return self._deliver(promotion)
 
-    def deliver_pending_to_telegram(self, limit: int = 10) -> dict:
+    def deliver_pending_to_telegram(self, limit: int = 10) -> PendingDeliveryResponse:
         self._require_partner_tag()
 
         with self._exclusive_delivery():
@@ -63,11 +64,11 @@ class PromotionDeliveryService:
                 except Exception:
                     failed += 1
 
-        return {
-            "processed": len(promotions),
-            "sent": sent,
-            "failed": failed,
-        }
+        return PendingDeliveryResponse(
+            processed=len(promotions),
+            sent=sent,
+            failed=failed,
+        )
 
     @contextmanager
     def _exclusive_delivery(self) -> Iterator[None]:

@@ -4,15 +4,17 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 from app.core.config import settings
 from app.db.database import SessionLocal
+from app.dependencies import (
+    get_amazon_service,
+    get_openai_service,
+    get_telegram_service,
+)
 from app.repositories.promotion_repo import PromotionRepository
-from app.services.amazon_service import AmazonService
-from app.services.openai_service import OpenAIService
 from app.services.promotion_delivery_service import (
     DeliveryInProgressError,
     PromotionDeliveryService,
 )
 from app.services.promotion_service import PromotionService
-from app.services.telegram_service import TelegramService
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +59,7 @@ def process_promotion_cycle() -> None:
             promotion_repository = PromotionRepository(db)
 
             promotion_service = PromotionService(
-                amazon_service=AmazonService(),
+                amazon_service=get_amazon_service(),
                 promotion_repository=promotion_repository,
             )
 
@@ -66,15 +68,15 @@ def process_promotion_cycle() -> None:
             logger.info(
                 "Promotion collection finished: "
                 "fetched=%s saved=%s duplicates_skipped=%s",
-                collection_result["fetched"],
-                collection_result["saved"],
-                collection_result["duplicates_skipped"],
+                collection_result.fetched,
+                collection_result.saved,
+                collection_result.duplicates_skipped,
             )
 
             delivery_service = PromotionDeliveryService(
                 promotion_repository=promotion_repository,
-                openai_service=OpenAIService(),
-                telegram_service=TelegramService(),
+                openai_service=get_openai_service(),
+                telegram_service=get_telegram_service(),
             )
 
             try:
@@ -89,9 +91,9 @@ def process_promotion_cycle() -> None:
 
             logger.info(
                 "Promotion delivery finished: processed=%s sent=%s failed=%s",
-                delivery_result["processed"],
-                delivery_result["sent"],
-                delivery_result["failed"],
+                delivery_result.processed,
+                delivery_result.sent,
+                delivery_result.failed,
             )
 
     except Exception:

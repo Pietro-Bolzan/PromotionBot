@@ -6,9 +6,10 @@ from pydantic import ValidationError
 
 from app.core.config import Settings, settings
 from app.scheduler import jobs
+from app.schemas.promotion_schema import PromotionProcessingResult
 from app.services.promotion_delivery_service import DeliveryInProgressError
 
-EMPTY_COLLECTION = {"fetched": 0, "saved": 0, "duplicates_skipped": 0}
+EMPTY_COLLECTION = PromotionProcessingResult(fetched=0, saved=0, duplicates_skipped=0)
 
 
 def test_job_never_overlaps_and_uses_the_configured_timezone(monkeypatch):

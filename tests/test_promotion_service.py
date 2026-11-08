@@ -1,7 +1,10 @@
 from decimal import Decimal
 from unittest.mock import MagicMock
 
-from app.schemas.promotion_schema import PromotionCandidate
+from app.schemas.promotion_schema import (
+    PromotionCandidate,
+    PromotionProcessingResult,
+)
 from app.services.promotion_service import PromotionService
 
 
@@ -26,4 +29,4 @@ def test_insert_lost_to_a_concurrent_run_counts_as_duplicate():
 
     result = PromotionService(amazon, repository).collect_pending_promotions()
 
-    assert result == {"fetched": 1, "saved": 0, "duplicates_skipped": 1}
+    assert result == PromotionProcessingResult(fetched=1, saved=0, duplicates_skipped=1)

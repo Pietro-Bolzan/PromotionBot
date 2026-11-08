@@ -8,6 +8,7 @@ import pytest
 
 from app.core.config import settings
 from app.models.promotions import PromotionStatus
+from app.schemas.promotion_schema import PendingDeliveryResponse
 from app.services.openai_service import OpenAIService
 from app.services.promotion_delivery_service import (
     DeliveryInProgressError,
@@ -139,7 +140,7 @@ def test_one_failure_does_not_stop_the_rest_of_the_batch(
 
     result = delivery.deliver_pending_to_telegram()
 
-    assert result == {"processed": 2, "sent": 1, "failed": 1}
+    assert result == PendingDeliveryResponse(processed=2, sent=1, failed=1)
 
 
 def test_failure_goes_back_to_the_queue_with_the_error(

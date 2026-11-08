@@ -1,10 +1,16 @@
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.orm import Session
 
 from app.core.security import validate_api_key
-from app.db.database import get_db
+from app.dependencies import (
+    DeliveryServiceDep,
+    OpenAIServiceDep,
+    PromotionRepositoryDep,
+    PromotionServiceDep,
+)
+from app.models.promotions import Promotion
 from app.repositories.promotion_repo import PromotionRepository
 from app.schemas.promotion_schema import (
     GeneratedCopyResponse,
@@ -13,11 +19,6 @@ from app.schemas.promotion_schema import (
     PromotionProcessingResult,
     PromotionResponse,
 )
-from app.services.amazon_service import AmazonService
-from app.services.openai_service import OpenAIService
-from app.services.promotion_delivery_service import PromotionDeliveryService
-from app.services.promotion_service import PromotionService
-from app.services.telegram_service import TelegramService
 
 # Authentication is declared on the router, so every route here is protected by
 # default -- including routes added later. Exposing something publicly requires
@@ -29,27 +30,9 @@ router = APIRouter(
 )
 
 
-@router.post(
-    "/run",
-    response_model=PromotionProcessingResult,
-)
-def run_promotions(db: Session = Depends(get_db)):
-    amazon_service = AmazonService()
-    promotion_repository = PromotionRepository(db)
-    promotion_service = PromotionService(
-        amazon_service=amazon_service,
-        promotion_repository=promotion_repository,
-    )
-
-    return promotion_service.collect_pending_promotions()
-
-
-@router.post("/{promotion_id}/generate-copy", response_model=GeneratedCopyResponse)
-def generate_promotion_copy(
-    promotion_id: UUID,
-    db: Session = Depends(get_db),
-):
-    promotion_repository = PromotionRepository(db)
+def _get_promotion_or_404(
+    promotion_id: UUID, promotion_repository: PromotionRepository
+) -> Promotion:
     promotion = promotion_repository.get_by_id(promotion_id)
 
     if promotion is None:
@@ -58,7 +41,21 @@ def generate_promotion_copy(
             detail="Promotion not found",
         )
 
-    openai_service = OpenAIService()
+    return promotion
+
+
+@router.post("/run", response_model=PromotionProcessingResult)
+def run_promotions(promotion_service: PromotionServiceDep):
+    return promotion_service.collect_pending_promotions()
+
+
+@router.post("/{promotion_id}/generate-copy", response_model=GeneratedCopyResponse)
+def generate_promotion_copy(
+    promotion_id: UUID,
+    promotion_repository: PromotionRepositoryDep,
+    openai_service: OpenAIServiceDep,
+):
+    promotion = _get_promotion_or_404(promotion_id, promotion_repository)
     message = openai_service.generate_sales_copy(promotion)
 
     promotion_repository.update_generated_message(
@@ -73,37 +70,22 @@ def generate_promotion_copy(
 
 @router.get("", response_model=list[PromotionResponse])
 def list_promotions(
-    limit: int = Query(default=20, ge=1, le=100),
-    offset: int = Query(default=0, ge=0),
-    db: Session = Depends(get_db),
+    promotion_repository: PromotionRepositoryDep,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ):
-    promotion_repository = PromotionRepository(db)
     return promotion_repository.list_all(limit=limit, offset=offset)
 
 
-@router.post(
-    "/{promotion_id}/send-telegram",
-    response_model=PromotionDeliveryResponse,
-)
+@router.post("/{promotion_id}/send-telegram", response_model=PromotionDeliveryResponse)
 def send_promotion_to_telegram(
     promotion_id: UUID,
-    db: Session = Depends(get_db),
+    promotion_repository: PromotionRepositoryDep,
+    delivery_service: DeliveryServiceDep,
 ):
-    promotion_repository = PromotionRepository(db)
-    promotion = promotion_repository.get_by_id(promotion_id)
-
-    if promotion is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Promotion not found",
-        )
-
-    delivery_service = PromotionDeliveryService(
-        promotion_repository=promotion_repository,
-        openai_service=OpenAIService(),
-        telegram_service=TelegramService(),
-    )
-
+    # Both dependencies share one repository (FastAPI caches it per request),
+    # so the promotion loaded here belongs to the session that delivers it.
+    promotion = _get_promotion_or_404(promotion_id, promotion_repository)
     delivered_promotion = delivery_service.deliver_to_telegram(promotion)
 
     return PromotionDeliveryResponse(
@@ -113,20 +95,9 @@ def send_promotion_to_telegram(
     )
 
 
-@router.post(
-    "/send-pending-telegram",
-    response_model=PendingDeliveryResponse,
-)
+@router.post("/send-pending-telegram", response_model=PendingDeliveryResponse)
 def send_pending_promotions_to_telegram(
-    limit: int = Query(default=10, ge=1, le=50),
-    db: Session = Depends(get_db),
+    delivery_service: DeliveryServiceDep,
+    limit: Annotated[int, Query(ge=1, le=50)] = 10,
 ):
-    promotion_repository = PromotionRepository(db)
-
-    delivery_service = PromotionDeliveryService(
-        promotion_repository=promotion_repository,
-        openai_service=OpenAIService(),
-        telegram_service=TelegramService(),
-    )
-
     return delivery_service.deliver_pending_to_telegram(limit=limit)

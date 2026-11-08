@@ -15,7 +15,11 @@ from sqlalchemy import func, select
 from app.core.config import settings
 from app.models.promotions import Promotion, PromotionStatus
 from app.repositories.promotion_repo import PromotionRepository
-from app.schemas.promotion_schema import PromotionCandidate
+from app.schemas.promotion_schema import (
+    PendingDeliveryResponse,
+    PromotionCandidate,
+    PromotionProcessingResult,
+)
 from app.services.promotion_delivery_service import PromotionDeliveryService
 from app.services.promotion_service import PromotionService
 
@@ -35,7 +39,7 @@ def add_row(db, make_promotion, **fields) -> Promotion:
     return promotion
 
 
-def collect(db, *asins: str) -> dict:
+def collect(db, *asins: str) -> PromotionProcessingResult:
     amazon = MagicMock()
     amazon.fetch_promotions.return_value = [
         PromotionCandidate(
@@ -84,7 +88,7 @@ def test_failed_product_is_not_collected_again_inside_the_window(
 
     result = collect(db_session, ASIN)
 
-    assert result == {"fetched": 1, "saved": 0, "duplicates_skipped": 1}
+    assert result == PromotionProcessingResult(fetched=1, saved=0, duplicates_skipped=1)
     assert rows_for(db_session) == 1
 
 
@@ -98,7 +102,7 @@ def test_open_row_blocks_the_product_even_outside_the_window(
     # Checked on the query itself: otherwise the unique index would hide a
     # broken query by rejecting the insert anyway.
     assert PromotionRepository(db_session).has_open_or_recent(ASIN, cutoff=ago(24))
-    assert collect(db_session, ASIN)["saved"] == 0
+    assert collect(db_session, ASIN).saved == 0
 
 
 def test_product_can_return_after_the_window(db_session, make_promotion):
@@ -110,7 +114,7 @@ def test_product_can_return_after_the_window(db_session, make_promotion):
         sent_at=ago(26),
     )
 
-    assert collect(db_session, ASIN)["saved"] == 1
+    assert collect(db_session, ASIN).saved == 1
     assert rows_for(db_session) == 2
 
 
@@ -206,7 +210,7 @@ def test_database_error_does_not_poison_the_rest_of_the_batch(
     db_session.refresh(broken)
     db_session.refresh(healthy)
 
-    assert result == {"processed": 2, "sent": 1, "failed": 1}
+    assert result == PendingDeliveryResponse(processed=2, sent=1, failed=1)
     assert healthy.status == PromotionStatus.SENT
     assert broken.status == PromotionStatus.PENDING  # back in the queue
     assert broken.last_error.startswith("DataError")

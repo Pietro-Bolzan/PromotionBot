@@ -5,18 +5,17 @@ real instead of rolling back, and delete everything they created at the end.
 """
 
 import threading
-from decimal import Decimal
 from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import delete
 
 from app.core.config import settings
 from app.db.database import SessionLocal
 from app.main import app
-from app.models.promotions import Promotion, PromotionStatus
+from app.models.promotions import PromotionStatus
 from app.repositories.promotion_repo import PromotionRepository
+from app.schemas.promotion_schema import PendingDeliveryResponse
 from app.services.promotion_delivery_service import (
     DeliveryInProgressError,
     PromotionDeliveryService,
@@ -25,39 +24,6 @@ from app.services.promotion_delivery_service import (
 pytestmark = pytest.mark.integration
 
 API_KEY = {"X-API-KEY": settings.app_api_key}
-
-
-@pytest.fixture
-def committed(test_engine):
-    """Insert committed promotions; all of them are deleted afterwards."""
-
-    def _insert(**fields) -> Promotion:
-        values = {
-            "asin": "B0RACE0001",
-            "title": "Produto",
-            "original_price": Decimal("100.00"),
-            "discounted_price": Decimal("70.00"),
-            "discount_percentage": Decimal("30.00"),
-            "product_url": "https://www.amazon.com.br/dp/B0RACE0001",
-            "category": "Test",
-            "status": PromotionStatus.PENDING,
-            "attempts": 0,
-            "generated_message": "Copy",
-        }
-        values.update(fields)
-        with SessionLocal() as db:
-            promotion = Promotion(**values)
-            db.add(promotion)
-            db.commit()
-            db.refresh(promotion)
-            db.expunge(promotion)
-            return promotion
-
-    yield _insert
-
-    with SessionLocal() as db:
-        db.execute(delete(Promotion))
-        db.commit()
 
 
 def delivery_with(db, telegram_service) -> PromotionDeliveryService:
@@ -99,7 +65,9 @@ def test_concurrent_deliveries_post_the_promotion_once(committed):
     worker.join(timeout=10)
 
     assert len(posted) == 1
-    assert outcome["scheduler"] == {"processed": 1, "sent": 1, "failed": 0}
+    assert outcome["scheduler"] == PendingDeliveryResponse(
+        processed=1, sent=1, failed=0
+    )
 
 
 def test_lock_is_free_again_after_a_delivery(committed):

@@ -2,6 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 from app.models.promotions import Promotion, PromotionStatus
 from app.repositories.promotion_repo import PromotionRepository
+from app.schemas.promotion_schema import PromotionProcessingResult
 from app.services.amazon_service import AmazonService
 
 
@@ -14,7 +15,7 @@ class PromotionService:
         self.amazon_service = amazon_service
         self.promotion_repository = promotion_repository
 
-    def collect_pending_promotions(self) -> dict:
+    def collect_pending_promotions(self) -> PromotionProcessingResult:
         candidates = self.amazon_service.fetch_promotions()
         cutoff = datetime.now(UTC) - timedelta(hours=24)
 
@@ -47,8 +48,8 @@ class PromotionService:
             else:
                 duplicates_skipped += 1
 
-        return {
-            "fetched": len(candidates),
-            "saved": saved,
-            "duplicates_skipped": duplicates_skipped,
-        }
+        return PromotionProcessingResult(
+            fetched=len(candidates),
+            saved=saved,
+            duplicates_skipped=duplicates_skipped,
+        )

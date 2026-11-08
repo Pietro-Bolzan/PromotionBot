@@ -132,3 +132,42 @@ def db_session(test_engine):
     session.close()
     transaction.rollback()
     connection.close()
+
+
+@pytest.fixture
+def committed(test_engine):
+    """Insert promotions that really commit, for tests that need several
+    connections (or a whole request) to see them; all are deleted afterwards.
+    """
+    from sqlalchemy import delete
+
+    from app.db.database import SessionLocal
+    from app.models.promotions import Promotion, PromotionStatus
+
+    def _insert(**fields) -> Promotion:
+        values = {
+            "asin": "B0RACE0001",
+            "title": "Produto",
+            "original_price": Decimal("100.00"),
+            "discounted_price": Decimal("70.00"),
+            "discount_percentage": Decimal("30.00"),
+            "product_url": "https://www.amazon.com.br/dp/B0RACE0001",
+            "category": "Test",
+            "status": PromotionStatus.PENDING,
+            "attempts": 0,
+            "generated_message": "Copy",
+        }
+        values.update(fields)
+        with SessionLocal() as db:
+            promotion = Promotion(**values)
+            db.add(promotion)
+            db.commit()
+            db.refresh(promotion)
+            db.expunge(promotion)
+            return promotion
+
+    yield _insert
+
+    with SessionLocal() as db:
+        db.execute(delete(Promotion))
+        db.commit()
