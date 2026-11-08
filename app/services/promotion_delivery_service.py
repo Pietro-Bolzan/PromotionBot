@@ -4,6 +4,7 @@ from contextlib import contextmanager, suppress
 
 from sqlalchemy import inspect
 
+from app.core.circuit_breaker import CircuitOpenError
 from app.core.config import settings
 from app.core.errors import ConfigurationError, DeliveryError
 from app.core.security import describe_error
@@ -64,15 +65,23 @@ class PromotionDeliveryService:
             sent = 0
             failed = 0
 
-            for promotion in promotions:
+            for position, promotion in enumerate(promotions):
                 try:
                     self._deliver(promotion)
                     sent += 1
+                except CircuitOpenError:
+                    # The channel is paused after repeated failures: the rest
+                    # of the batch stays queued, with its attempts untouched.
+                    logger.warning(
+                        "Telegram is paused; %d promotions left for a later cycle",
+                        len(promotions) - position,
+                    )
+                    break
                 except Exception:
                     failed += 1
 
         return PendingDeliveryResponse(
-            processed=len(promotions),
+            processed=sent + failed,
             sent=sent,
             failed=failed,
         )
@@ -117,6 +126,11 @@ class PromotionDeliveryService:
             delivered = True
             return self.promotion_repository.mark_as_sent(promotion)
 
+        except CircuitOpenError:
+            # Nothing was attempted (the channel is paused), so this is not a
+            # failed delivery attempt and must not bring the promotion closer
+            # to FAILED.
+            raise
         except Exception as error:
             if not delivered:
                 self._record_failure(promotion, error)

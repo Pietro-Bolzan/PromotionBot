@@ -6,6 +6,7 @@ import httpx
 import openai
 import pytest
 
+from app.core.circuit_breaker import CircuitOpenError
 from app.core.config import settings
 from app.core.errors import ConfigurationError
 from app.models.promotions import PromotionStatus
@@ -267,3 +268,31 @@ def test_already_sent_promotion_is_not_sent_again(
         delivery.deliver_to_telegram(make_promotion(status=PromotionStatus.SENT))
 
     telegram_service.send_promotion.assert_not_called()
+
+
+def test_paused_channel_does_not_count_as_a_delivery_attempt(
+    delivery, repository, telegram_service, make_promotion
+):
+    telegram_service.send_promotion.side_effect = CircuitOpenError("Telegram paused")
+
+    with pytest.raises(CircuitOpenError):
+        delivery.deliver_to_telegram(make_promotion(attempts=2))
+
+    repository.record_failure.assert_not_called()  # would have made it FAILED
+
+
+def test_paused_channel_leaves_the_rest_of_the_batch_queued(
+    delivery, repository, telegram_service, make_promotion
+):
+    repository.list_pending.return_value = [
+        make_promotion(asin="B0CNOTE001"),
+        make_promotion(asin="B0CPHONE02"),
+        make_promotion(asin="B0CTABLE03"),
+    ]
+    telegram_service.send_promotion.side_effect = CircuitOpenError("Telegram paused")
+
+    result = delivery.deliver_pending_to_telegram()
+
+    assert telegram_service.send_promotion.call_count == 1
+    assert result == PendingDeliveryResponse(processed=0, sent=0, failed=0)
+    repository.record_failure.assert_not_called()

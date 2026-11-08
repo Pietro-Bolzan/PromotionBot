@@ -1,7 +1,15 @@
 import logging
 
-from openai import APIStatusError, OpenAI, OpenAIError
+from openai import (
+    APIConnectionError,
+    APIStatusError,
+    InternalServerError,
+    OpenAI,
+    OpenAIError,
+    RateLimitError,
+)
 
+from app.core.circuit_breaker import CircuitBreaker, CircuitOpenError
 from app.core.config import settings
 from app.core.security import describe_error
 from app.models.promotions import Promotion
@@ -18,10 +26,26 @@ MAX_RETRIES = 2
 # model, unknown model, invalid parameters): retrying will not help.
 CONFIGURATION_ERROR_STATUSES = {400, 401, 403, 404}
 
+# A failed call already took up to three timeouts. After this many in a row,
+# the template is used straight away until the pause is over.
+BREAKER_FAILURE_THRESHOLD = 3
+BREAKER_RESET_SECONDS = 300
+
+
+def _is_service_trouble(error: Exception) -> bool:
+    # Unreachable, overloaded or failing on its side; a rejected key or model
+    # is a configuration problem, answered at once, and does not count.
+    return isinstance(error, APIConnectionError | RateLimitError | InternalServerError)
+
 
 class OpenAIService:
-    def __init__(self):
+    def __init__(self, breaker: CircuitBreaker | None = None):
         self.client = None
+        self._breaker = breaker or CircuitBreaker(
+            "OpenAI",
+            failure_threshold=BREAKER_FAILURE_THRESHOLD,
+            reset_timeout=BREAKER_RESET_SECONDS,
+        )
 
         if settings.openai_api_key:
             self.client = OpenAI(
@@ -52,17 +76,24 @@ Regras:
 - não inclua links nem URLs: o link do produto é adicionado automaticamente ao final
 """
 
+        client = self.client
         try:
-            response = self.client.responses.create(
-                model=settings.openai_model,
-                instructions=(
-                    "Você é um copywriter especialista em vendas para WhatsApp "
-                    "e Telegram. Escreva mensagens curtas, naturais e "
-                    "persuasivas para o público brasileiro."
+            response = self._breaker.call(
+                lambda: client.responses.create(
+                    model=settings.openai_model,
+                    instructions=(
+                        "Você é um copywriter especialista em vendas para WhatsApp "
+                        "e Telegram. Escreva mensagens curtas, naturais e "
+                        "persuasivas para o público brasileiro."
+                    ),
+                    input=prompt,
+                    max_output_tokens=settings.openai_max_output_tokens,
                 ),
-                input=prompt,
-                max_output_tokens=settings.openai_max_output_tokens,
+                is_failure=_is_service_trouble,
             )
+        except CircuitOpenError:
+            logger.info("OpenAI is paused after repeated failures; using the template")
+            return self._fallback_message(promotion)
         except OpenAIError as error:
             # A promotion must not be lost because the copywriter is down: the
             # template is plainer but carries the same prices.

@@ -130,3 +130,31 @@ def test_rate_limit_is_only_a_warning(make_promotion, caplog):
         service.generate_sales_copy(make_promotion())
 
     assert caplog.records[-1].levelno == logging.WARNING
+
+
+def test_repeated_outages_skip_openai_and_use_the_template(make_promotion):
+    # Each failed call already waited up to three timeouts; after three of
+    # them the template is used straight away.
+    service = service_raising(connection_error())
+    promotion = make_promotion()
+
+    for _ in range(3):
+        service.generate_sales_copy(promotion)
+    service.client.responses.create.reset_mock()
+
+    copy = service.generate_sales_copy(promotion)
+
+    assert copy == service._fallback_message(promotion)
+    service.client.responses.create.assert_not_called()
+
+
+def test_a_wrong_key_does_not_pause_openai(make_promotion):
+    # Answered at once, so there is nothing to save by pausing calls.
+    service = service_raising(
+        status_error(openai.AuthenticationError, 401, "Incorrect API key")
+    )
+
+    for _ in range(4):
+        service.generate_sales_copy(make_promotion())
+
+    assert service.client.responses.create.call_count == 4

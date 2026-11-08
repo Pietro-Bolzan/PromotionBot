@@ -3,6 +3,7 @@ from collections.abc import Callable
 
 import httpx
 
+from app.core.circuit_breaker import CircuitBreaker
 from app.core.config import settings
 from app.core.errors import ConfigurationError, DeliveryError
 from app.core.retry import call_with_retry
@@ -17,6 +18,12 @@ MAX_ATTEMPTS = 3
 # Longest wait Telegram may ask for (429 retry_after) that is still worth
 # spending inside one delivery; beyond it the promotion waits for a later one.
 MAX_RETRY_AFTER_SECONDS = 10
+
+# After this many failed calls in a row (each already retried), Telegram is
+# left alone for a while: the rest of the queue keeps its delivery attempts
+# instead of spending them on an outage.
+BREAKER_FAILURE_THRESHOLD = 3
+BREAKER_RESET_SECONDS = 120
 
 
 class TelegramApiError(DeliveryError):
@@ -76,9 +83,32 @@ def _requested_wait(error: Exception) -> float | None:
     return None
 
 
+def _is_service_trouble(error: Exception) -> bool:
+    """Whether the failure says Telegram is unwell, as opposed to refusing us.
+
+    A bad image or a wrong chat id is Telegram answering normally: it does not
+    count towards opening the circuit.
+    """
+    if isinstance(error, TelegramApiError):
+        code = error.telegram_code
+        return code is not None and (code == 429 or code >= 500)
+    if isinstance(error, httpx.HTTPStatusError):
+        return error.response.status_code >= 500
+    return isinstance(error, httpx.TransportError)
+
+
 class TelegramService:
-    def __init__(self, sleep: Callable[[float], None] = time.sleep) -> None:
+    def __init__(
+        self,
+        sleep: Callable[[float], None] = time.sleep,
+        breaker: CircuitBreaker | None = None,
+    ) -> None:
         self._sleep = sleep
+        self._breaker = breaker or CircuitBreaker(
+            "Telegram",
+            failure_threshold=BREAKER_FAILURE_THRESHOLD,
+            reset_timeout=BREAKER_RESET_SECONDS,
+        )
 
     def send_message(self, message: str) -> None:
         self._call("sendMessage", {"text": message})
@@ -108,13 +138,18 @@ class TelegramService:
         if not settings.telegram_bot_token or not settings.telegram_chat_id:
             raise ConfigurationError("Telegram credentials are not configured")
 
-        call_with_retry(
-            lambda: self._post(method, payload),
-            should_retry=_safe_to_retry,
-            delay_hint=_requested_wait,
-            attempts=MAX_ATTEMPTS,
-            sleep=self._sleep,
-            description=f"Telegram {method}",
+        # The breaker sees one outcome per call, after the retries: three
+        # failed calls are three outages in a row, not three attempts.
+        self._breaker.call(
+            lambda: call_with_retry(
+                lambda: self._post(method, payload),
+                should_retry=_safe_to_retry,
+                delay_hint=_requested_wait,
+                attempts=MAX_ATTEMPTS,
+                sleep=self._sleep,
+                description=f"Telegram {method}",
+            ),
+            is_failure=_is_service_trouble,
         )
 
     def _post(self, method: str, payload: dict) -> None:

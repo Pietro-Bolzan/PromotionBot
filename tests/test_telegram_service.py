@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
+from app.core.circuit_breaker import CircuitOpenError
 from app.core.config import settings
 from app.core.errors import ConfigurationError
 from app.services.telegram_service import (
@@ -208,3 +209,34 @@ def test_proxy_error_page_is_retried_then_raised(telegram):
         telegram.send_promotion(message="Oferta", link=LINK)
 
     assert post.call_count == 3
+
+
+# --- circuit breaker ---
+
+
+def fail_sends(telegram, times):
+    for _ in range(times):
+        with (
+            patch(POST, side_effect=httpx.ConnectError("refused")),
+            pytest.raises(httpx.ConnectError),
+        ):
+            telegram.send_promotion(message="Oferta", link=LINK)
+
+
+def test_outage_opens_the_circuit_and_stops_requests(telegram):
+    fail_sends(telegram, 3)  # three calls, each already retried three times
+
+    with patch(POST) as post, pytest.raises(CircuitOpenError):
+        telegram.send_promotion(message="Oferta", link=LINK)
+
+    post.assert_not_called()
+
+
+def test_refusals_do_not_open_the_circuit(telegram):
+    # A bad image or a wrong chat is Telegram answering, not Telegram down.
+    for _ in range(5):
+        with patch(POST, return_value=bad_image()), pytest.raises(TelegramApiError):
+            telegram.send_promotion(message="Oferta", link=LINK)
+
+    with patch(POST, return_value=ok_response()):
+        telegram.send_promotion(message="Oferta", link=LINK)  # still goes through

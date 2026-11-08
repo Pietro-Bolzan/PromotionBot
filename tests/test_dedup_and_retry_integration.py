@@ -6,7 +6,7 @@ unique index), so they can only be proven against a real database.
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
@@ -22,6 +22,7 @@ from app.schemas.promotion_schema import (
 )
 from app.services.promotion_delivery_service import PromotionDeliveryService
 from app.services.promotion_service import PromotionService
+from app.services.telegram_service import TelegramService
 
 pytestmark = pytest.mark.integration
 
@@ -214,3 +215,42 @@ def test_database_error_does_not_poison_the_rest_of_the_batch(
     assert healthy.status == PromotionStatus.SENT
     assert broken.status == PromotionStatus.PENDING  # back in the queue
     assert broken.last_error.startswith("DataError")
+
+
+def test_telegram_outage_spends_the_attempts_of_only_a_few_promotions(
+    db_session, make_promotion, monkeypatch
+):
+    # Without the circuit breaker, every queued promotion would spend an
+    # attempt on each cycle of an outage and end up FAILED for good.
+    monkeypatch.setattr(settings, "telegram_bot_token", "123:fake-token")
+    monkeypatch.setattr(settings, "telegram_chat_id", "-1000000000")
+    for index in range(5):
+        add_row(
+            db_session,
+            make_promotion,
+            asin=f"B0OUTAGE0{index}",
+            created_at=ago(5 - index),
+        )
+    openai_service = MagicMock()
+    openai_service.generate_sales_copy.return_value = "Copy"
+    delivery = PromotionDeliveryService(
+        PromotionRepository(db_session),
+        openai_service,
+        TelegramService(sleep=lambda seconds: None),
+    )
+
+    with patch(
+        "app.services.telegram_service.httpx.post",
+        side_effect=httpx.ConnectError("telegram down"),
+    ):
+        first = delivery.deliver_pending_to_telegram()
+        second = delivery.deliver_pending_to_telegram()
+
+    attempts = sorted(
+        db_session.scalars(
+            select(Promotion.attempts).where(Promotion.asin.like("B0OUTAGE%"))
+        )
+    )
+    assert first == PendingDeliveryResponse(processed=3, sent=0, failed=3)
+    assert second == PendingDeliveryResponse(processed=0, sent=0, failed=0)
+    assert attempts == [0, 0, 1, 1, 1]

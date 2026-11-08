@@ -7,6 +7,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from app.core.circuit_breaker import CircuitOpenError
 from app.core.config import settings
 from app.dependencies import get_delivery_service
 from app.main import app
@@ -74,6 +75,14 @@ def test_unreachable_telegram_is_a_502(client):
 
     assert_error_body(
         client.post(SEND_PENDING, headers=API_KEY), 502, "upstream_unreachable"
+    )
+
+
+def test_paused_channel_is_a_503(client):
+    delivery_failing_with(CircuitOpenError("Telegram is unavailable"))
+
+    assert_error_body(
+        client.post(SEND_PENDING, headers=API_KEY), 503, "service_unavailable"
     )
 
 
