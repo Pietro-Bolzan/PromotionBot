@@ -101,4 +101,4 @@ def test_sent_promotion_is_not_sent_again_by_the_route(committed):
         )
 
     assert response.status_code == 409
-    assert response.json() == {"detail": "Promotion was already sent"}
+    assert response.json()["error_code"] == "promotion_already_sent"

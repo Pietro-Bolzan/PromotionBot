@@ -1,6 +1,7 @@
 import httpx
 
 from app.core.config import settings
+from app.core.errors import ConfigurationError, DeliveryError
 from app.services.affiliate import compose_with_link
 
 # Telegram Bot API limits.
@@ -9,8 +10,10 @@ MESSAGE_MAX_LENGTH = 4096
 REQUEST_TIMEOUT_SECONDS = 15
 
 
-class TelegramApiError(RuntimeError):
+class TelegramApiError(DeliveryError):
     """Telegram answered and refused the request (ok: false)."""
+
+    error_code = "telegram_rejected"
 
 
 # Failures after which the photo was certainly not posted, so posting the text
@@ -52,7 +55,7 @@ class TelegramService:
 
     def _call(self, method: str, payload: dict) -> None:
         if not settings.telegram_bot_token or not settings.telegram_chat_id:
-            raise ValueError("Telegram credentials are not configured")
+            raise ConfigurationError("Telegram credentials are not configured")
 
         response = httpx.post(
             f"https://api.telegram.org/bot{settings.telegram_bot_token}/{method}",

@@ -4,6 +4,7 @@ import httpx
 import pytest
 
 from app.core.config import settings
+from app.core.errors import ConfigurationError
 from app.services.telegram_service import (
     CAPTION_MAX_LENGTH,
     TelegramApiError,
@@ -92,7 +93,7 @@ def test_photo_timeout_does_not_also_post_the_text():
 def test_missing_credentials_fail_without_any_request(monkeypatch):
     monkeypatch.setattr(settings, "telegram_bot_token", "")
 
-    with patch(POST) as post, pytest.raises(ValueError, match="not configured"):
+    with patch(POST) as post, pytest.raises(ConfigurationError, match="not configured"):
         TelegramService().send_promotion(message="Oferta", link=LINK, image_url=IMAGE)
 
     post.assert_not_called()

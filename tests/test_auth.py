@@ -21,6 +21,14 @@ PROTECTED_ROUTES = [
 ]
 
 
+def assert_error(response, error_code: str, message: str) -> None:
+    assert response.json() == {
+        "error_code": error_code,
+        "message": message,
+        "request_id": response.headers["x-request-id"],
+    }
+
+
 @pytest.fixture(scope="module")
 def client():
     with TestClient(app) as test_client:
@@ -32,7 +40,7 @@ def test_protected_route_refuses_a_request_without_key(client, method, path):
     response = client.request(method, path)
 
     assert response.status_code == 401
-    assert response.json() == {"detail": "Missing API key"}
+    assert_error(response, "unauthorized", "Missing API key")
 
 
 @pytest.mark.parametrize(("method", "path"), PROTECTED_ROUTES)
@@ -40,7 +48,7 @@ def test_protected_route_refuses_a_wrong_key(client, method, path):
     response = client.request(method, path, headers={"X-API-KEY": "wrong"})
 
     assert response.status_code == 401
-    assert response.json() == {"detail": "Invalid API key"}
+    assert_error(response, "unauthorized", "Invalid API key")
 
 
 def test_non_ascii_key_is_refused_not_a_server_error(client):

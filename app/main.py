@@ -1,18 +1,14 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, status
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI
 
+from app.api.error_handlers import UnhandledErrorMiddleware, register_error_handlers
 from app.api.routers.health import router as health_router
 from app.api.routers.promotion_router import router as promotions_router
 from app.core.config import settings
 from app.core.logging_config import configure_logging
 from app.core.request_context import RequestIdMiddleware
 from app.scheduler.jobs import start_scheduler, stop_scheduler
-from app.services.promotion_delivery_service import (
-    DeliveryInProgressError,
-    PromotionAlreadySentError,
-)
 
 
 @asynccontextmanager
@@ -27,26 +23,14 @@ app = FastAPI(
     title=settings.app_name,
     lifespan=lifespan,
 )
+# The last one added runs first: RequestIdMiddleware wraps the error
+# boundary, so even an unexpected 500 is logged and answered with the id.
+app.add_middleware(UnhandledErrorMiddleware)
 app.add_middleware(RequestIdMiddleware)
+register_error_handlers(app)
 
 app.include_router(health_router)
 app.include_router(promotions_router)
-
-
-@app.exception_handler(DeliveryInProgressError)
-async def delivery_in_progress(request: Request, error: DeliveryInProgressError):
-    return JSONResponse(
-        status_code=status.HTTP_409_CONFLICT,
-        content={"detail": "Another delivery is in progress; try again shortly"},
-    )
-
-
-@app.exception_handler(PromotionAlreadySentError)
-async def promotion_already_sent(request: Request, error: PromotionAlreadySentError):
-    return JSONResponse(
-        status_code=status.HTTP_409_CONFLICT,
-        content={"detail": "Promotion was already sent"},
-    )
 
 
 @app.get("/")

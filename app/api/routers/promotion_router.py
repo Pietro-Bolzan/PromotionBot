@@ -12,6 +12,7 @@ from app.dependencies import (
 )
 from app.models.promotions import Promotion
 from app.repositories.promotion_repo import PromotionRepository
+from app.schemas.error_schema import ErrorResponse
 from app.schemas.promotion_schema import (
     GeneratedCopyResponse,
     PendingDeliveryResponse,
@@ -20,6 +21,12 @@ from app.schemas.promotion_schema import (
     PromotionResponse,
 )
 
+
+def _errors(*status_codes: int) -> dict:
+    """Document the error body for these statuses in the OpenAPI schema."""
+    return {status_code: {"model": ErrorResponse} for status_code in status_codes}
+
+
 # Authentication is declared on the router, so every route here is protected by
 # default -- including routes added later. Exposing something publicly requires
 # deliberately moving it out of this router.
@@ -27,6 +34,7 @@ router = APIRouter(
     prefix="/api/promotions",
     tags=["promotions"],
     dependencies=[Depends(validate_api_key)],
+    responses=_errors(401, 422, 500),
 )
 
 
@@ -49,7 +57,11 @@ def run_promotions(promotion_service: PromotionServiceDep):
     return promotion_service.collect_pending_promotions()
 
 
-@router.post("/{promotion_id}/generate-copy", response_model=GeneratedCopyResponse)
+@router.post(
+    "/{promotion_id}/generate-copy",
+    response_model=GeneratedCopyResponse,
+    responses=_errors(404),
+)
 def generate_promotion_copy(
     promotion_id: UUID,
     promotion_repository: PromotionRepositoryDep,
@@ -77,7 +89,11 @@ def list_promotions(
     return promotion_repository.list_all(limit=limit, offset=offset)
 
 
-@router.post("/{promotion_id}/send-telegram", response_model=PromotionDeliveryResponse)
+@router.post(
+    "/{promotion_id}/send-telegram",
+    response_model=PromotionDeliveryResponse,
+    responses=_errors(404, 409, 502, 503),
+)
 def send_promotion_to_telegram(
     promotion_id: UUID,
     promotion_repository: PromotionRepositoryDep,
@@ -95,7 +111,11 @@ def send_promotion_to_telegram(
     )
 
 
-@router.post("/send-pending-telegram", response_model=PendingDeliveryResponse)
+@router.post(
+    "/send-pending-telegram",
+    response_model=PendingDeliveryResponse,
+    responses=_errors(409, 502, 503),
+)
 def send_pending_promotions_to_telegram(
     delivery_service: DeliveryServiceDep,
     limit: Annotated[int, Query(ge=1, le=50)] = 10,

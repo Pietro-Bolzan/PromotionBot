@@ -7,6 +7,7 @@ import openai
 import pytest
 
 from app.core.config import settings
+from app.core.errors import ConfigurationError
 from app.models.promotions import PromotionStatus
 from app.schemas.promotion_schema import PendingDeliveryResponse
 from app.services.openai_service import OpenAIService
@@ -68,7 +69,7 @@ def test_missing_tag_refuses_before_spending_or_failing(
     monkeypatch.setattr(settings, "amazon_partner_tag", "")
     promotion = make_promotion()
 
-    with pytest.raises(RuntimeError, match="AMAZON_PARTNER_TAG"):
+    with pytest.raises(ConfigurationError, match="AMAZON_PARTNER_TAG"):
         delivery.deliver_to_telegram(promotion)
 
     openai_service.generate_sales_copy.assert_not_called()
@@ -82,7 +83,7 @@ def test_missing_tag_stops_the_batch_before_reading_pending(
 ):
     monkeypatch.setattr(settings, "amazon_partner_tag", "")
 
-    with pytest.raises(RuntimeError, match="AMAZON_PARTNER_TAG"):
+    with pytest.raises(ConfigurationError, match="AMAZON_PARTNER_TAG"):
         delivery.deliver_pending_to_telegram()
 
     repository.list_pending.assert_not_called()

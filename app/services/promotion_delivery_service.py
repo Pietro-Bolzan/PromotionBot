@@ -5,6 +5,7 @@ from contextlib import contextmanager, suppress
 from sqlalchemy import inspect
 
 from app.core.config import settings
+from app.core.errors import ConfigurationError, DeliveryError
 from app.core.security import describe_error
 from app.models.promotions import Promotion, PromotionStatus
 from app.repositories.promotion_repo import PromotionRepository
@@ -16,12 +17,18 @@ from app.services.telegram_service import TelegramService
 logger = logging.getLogger(__name__)
 
 
-class DeliveryInProgressError(RuntimeError):
+class DeliveryInProgressError(DeliveryError):
     """Another delivery is running, in this process or in another one."""
 
+    status_code = 409
+    error_code = "delivery_in_progress"
 
-class PromotionAlreadySentError(RuntimeError):
+
+class PromotionAlreadySentError(DeliveryError):
     """Sending the promotion again would post it twice."""
+
+    status_code = 409
+    error_code = "promotion_already_sent"
 
 
 class PromotionDeliveryService:
@@ -77,7 +84,9 @@ class PromotionDeliveryService:
         # through this lock.
         with self.promotion_repository.delivery_lock() as acquired:
             if not acquired:
-                raise DeliveryInProgressError("Another delivery is in progress")
+                raise DeliveryInProgressError(
+                    "Another delivery is in progress; try again shortly"
+                )
             yield
 
     def _deliver(self, promotion: Promotion) -> Promotion:
@@ -173,7 +182,7 @@ class PromotionDeliveryService:
         # promotion: it is checked before touching one, so it neither spends an
         # OpenAI call nor marks anything as FAILED.
         if not settings.amazon_partner_tag.strip():
-            raise RuntimeError(
+            raise ConfigurationError(
                 "AMAZON_PARTNER_TAG is not configured; refusing to send links "
                 "that earn no commission"
             )
