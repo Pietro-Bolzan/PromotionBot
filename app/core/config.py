@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
+        # .env is shared with docker-compose.yml (POSTGRES_*), so keys that are
+        # not fields here are ignored rather than rejected. Required fields still
+        # fail loudly when missing.
+        extra="ignore",
     )
 
     # --- application ---

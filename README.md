@@ -19,6 +19,9 @@ as credenciais do Telegram nada é enviado.
 enviar promoções. Sem ela o envio é recusado antes de qualquer chamada à OpenAI, porque
 link sem tag não gera comissão.
 
+O `docker-compose.yml` lê as credenciais do Postgres (`POSTGRES_*`) desse mesmo `.env` e
+publica a porta só em `localhost`.
+
 As migrations leem a mesma `DATABASE_URL` — o `alembic.ini` não contém URL de banco. Uma
 variável de ambiente tem precedência sobre o `.env`, o que é como a configuração de produção
 é injetada.
