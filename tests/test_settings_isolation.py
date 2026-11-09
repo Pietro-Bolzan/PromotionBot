@@ -9,5 +9,6 @@ def test_tests_never_see_real_credentials():
     assert settings.telegram_bot_token == ""
     assert settings.telegram_chat_id == ""
     assert settings.shopee_secret == ""
+    assert settings.aliexpress_app_secret == ""
     assert settings.promotion_sources == ["mock"]
     assert make_url(settings.database_url).database.endswith("_test")

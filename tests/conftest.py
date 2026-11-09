@@ -39,6 +39,10 @@ os.environ.update(
         "SHOPEE_APP_ID": "",
         "SHOPEE_SECRET": "",
         "SHOPEE_KEYWORDS": "",
+        "ALIEXPRESS_APP_KEY": "",
+        "ALIEXPRESS_APP_SECRET": "",
+        "ALIEXPRESS_TRACKING_ID": "",
+        "ALIEXPRESS_KEYWORDS": "",
         "DELIVERY_MAX_ATTEMPTS": "3",
     }
 )

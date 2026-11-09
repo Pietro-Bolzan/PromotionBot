@@ -7,7 +7,7 @@ from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # Every source app.sources.registry can build.
-SourceName = Literal["mock", "shopee"]
+SourceName = Literal["mock", "shopee", "aliexpress"]
 
 
 class Settings(BaseSettings):
@@ -54,6 +54,13 @@ class Settings(BaseSettings):
     shopee_keywords: Annotated[list[str], NoDecode] = Field(default_factory=list)
     shopee_items_per_keyword: int = Field(default=10, ge=1, le=50)
 
+    # --- aliexpress ---
+    aliexpress_app_key: str = ""
+    aliexpress_app_secret: str = ""
+    aliexpress_tracking_id: str = ""
+    aliexpress_keywords: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    aliexpress_items_per_keyword: int = Field(default=10, ge=1, le=50)
+
     # --- openai ---
     openai_api_key: str = ""
     openai_model: str = "gpt-4.1-mini"
@@ -88,7 +95,7 @@ class Settings(BaseSettings):
             return [name.lower() for name in _split_list(value)]
         return value
 
-    @field_validator("shopee_keywords", mode="before")
+    @field_validator("shopee_keywords", "aliexpress_keywords", mode="before")
     @classmethod
     def _split_keywords(cls, value: Any) -> Any:
         return _split_list(value) if isinstance(value, str) else value
@@ -102,20 +109,25 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _enabled_sources_are_configured(self) -> Self:
-        if "shopee" in self.promotion_sources:
-            missing = [
-                name
-                for name, value in (
-                    ("SHOPEE_APP_ID", self.shopee_app_id),
-                    ("SHOPEE_SECRET", self.shopee_secret),
-                    ("SHOPEE_KEYWORDS", self.shopee_keywords),
-                )
-                if not value
-            ]
-            if missing:
+        required = {
+            "shopee": {
+                "SHOPEE_APP_ID": self.shopee_app_id,
+                "SHOPEE_SECRET": self.shopee_secret,
+                "SHOPEE_KEYWORDS": self.shopee_keywords,
+            },
+            "aliexpress": {
+                "ALIEXPRESS_APP_KEY": self.aliexpress_app_key,
+                "ALIEXPRESS_APP_SECRET": self.aliexpress_app_secret,
+                "ALIEXPRESS_TRACKING_ID": self.aliexpress_tracking_id,
+                "ALIEXPRESS_KEYWORDS": self.aliexpress_keywords,
+            },
+        }
+        for source, values in required.items():
+            missing = [name for name, value in values.items() if not value]
+            if source in self.promotion_sources and missing:
                 raise ValueError(
-                    f"PROMOTION_SOURCES includes shopee but {', '.join(missing)} "
-                    "is not set"
+                    f"PROMOTION_SOURCES includes {source} but "
+                    f"{', '.join(missing)} is not set"
                 )
         return self
 

@@ -1,5 +1,6 @@
 from collections.abc import Callable, Iterable
 
+from app.sources.aliexpress import AliExpressSource
 from app.sources.base import PromotionSource
 from app.sources.mock import MockSource
 from app.sources.shopee import ShopeeSource
@@ -9,6 +10,7 @@ from app.sources.shopee import ShopeeSource
 SOURCE_FACTORIES: dict[str, Callable[[], PromotionSource]] = {
     "mock": MockSource,
     "shopee": ShopeeSource,
+    "aliexpress": AliExpressSource,
 }
 
 
