@@ -1,4 +1,5 @@
 import logging
+import re
 
 from openai import (
     APIConnectionError,
@@ -13,7 +14,7 @@ from app.core.circuit_breaker import CircuitBreaker, CircuitOpenError
 from app.core.config import settings
 from app.core.security import describe_error
 from app.models.promotions import Promotion
-from app.services.formatting import format_brl, format_discount
+from app.services.formatting import STORE_NAMES
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,10 @@ CONFIGURATION_ERROR_STATUSES = {400, 401, 403, 404}
 # the template is used straight away until the pause is over.
 BREAKER_FAILURE_THRESHOLD = 3
 BREAKER_RESET_SECONDS = 300
+
+# Prices are added to the message from the stored numbers. A copy that writes
+# one anyway may have it wrong, and a wrong price must never be posted.
+_PRICE_IN_COPY = re.compile(r"R\$\s*\d|\d\s*(?:%|reais\b)", re.IGNORECASE)
 
 
 def _is_service_trouble(error: Exception) -> bool:
@@ -64,16 +69,16 @@ class OpenAIService:
 Crie uma mensagem de venda curta, direta e persuasiva em português brasileiro.
 
 Produto: {promotion.title}
-Preço original: {format_brl(promotion.original_price)}
-Preço com desconto: {format_brl(promotion.discounted_price)}
-Desconto: {format_discount(promotion.discount_percentage)}
-Categoria: {promotion.category}
+Loja: {STORE_NAMES[promotion.store]}
+Categoria: {promotion.category or "não informada"}
 
 Regras:
 - máximo 5 linhas
-- destaque a economia
+- destaque a oportunidade
 - gere urgência
-- não inclua links nem URLs: o link do produto é adicionado automaticamente ao final
+- não escreva preços, valores, percentuais de desconto, links nem URLs: o
+  preço, a hora em que ele foi verificado e o link são adicionados
+  automaticamente ao final
 """
 
         client = self.client
@@ -121,13 +126,14 @@ Regras:
             )
             return self._fallback_message(promotion)
 
+        if _PRICE_IN_COPY.search(copy):
+            logger.warning("Generated copy mentions a price, using the template")
+            return self._fallback_message(promotion)
+
         return copy
 
     def _fallback_message(self, promotion: Promotion) -> str:
-        original = format_brl(promotion.original_price)
-        discounted = format_brl(promotion.discounted_price)
-        return (
-            f"Oferta encontrada: {promotion.title}\n"
-            f"De {original} por {discounted}\n"
-            f"Desconto de {format_discount(promotion.discount_percentage)}"
-        )
+        # No prices: like the generated copy, it is followed by the price
+        # details built from the stored numbers.
+        store = STORE_NAMES[promotion.store]
+        return f"Oferta encontrada na {store}: {promotion.title}"

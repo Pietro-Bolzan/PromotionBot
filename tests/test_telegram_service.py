@@ -72,6 +72,17 @@ def test_refused_photo_falls_back_to_text_with_the_link(telegram):
     assert post.call_args.kwargs["json"]["text"] == f"Oferta\n\n{LINK}"
 
 
+def test_price_details_reach_the_caption_and_the_text_fallback(telegram):
+    with patch(POST, side_effect=[bad_image(), ok_response()]) as post:
+        telegram.send_promotion(
+            message="Oferta", link=LINK, image_url=IMAGE, details="R$ 49,90"
+        )
+
+    caption = post.call_args_list[0].kwargs["json"]["caption"]
+    text = post.call_args_list[1].kwargs["json"]["text"]
+    assert caption == text == f"Oferta\n\nR$ 49,90\n\n{LINK}"
+
+
 def test_without_image_sends_text_with_link(telegram):
     with patch(POST, return_value=ok_response()) as post:
         telegram.send_promotion(message="Oferta", link=LINK)

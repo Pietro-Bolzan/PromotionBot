@@ -8,6 +8,7 @@ accident. The database is a dedicated one, and its name must end in "_test".
 """
 
 import os
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -61,6 +62,7 @@ def make_promotion():
             "status": PromotionStatus.PENDING,
             "attempts": 0,
             "generated_message": None,
+            "created_at": datetime.now(UTC),
         }
         values.update(overrides)
         return Promotion(**values)

@@ -65,6 +65,37 @@ def test_prompt_does_not_give_the_product_url_to_the_llm(make_promotion):
     assert "amazon.com.br" not in prompt
 
 
+def test_prompt_gives_the_llm_no_prices(make_promotion):
+    # The price is added from the stored numbers; the LLM could only get it wrong.
+    service = service_with_response()
+
+    service.generate_sales_copy(make_promotion())
+
+    prompt = service.client.responses.create.call_args.kwargs["input"]
+    assert "R$" not in prompt
+    assert "4.299" not in prompt
+    assert "Loja: Amazon" in prompt
+
+
+@pytest.mark.parametrize(
+    "copy",
+    ["Corre! Só R$ 99 hoje", "Agora com 40% OFF", "Leve por 99 reais"],
+)
+def test_copy_that_writes_a_price_is_replaced_by_the_template(copy, make_promotion):
+    service = service_with_response(copy)
+    promotion = make_promotion()
+
+    assert service.generate_sales_copy(promotion) == service._fallback_message(
+        promotion
+    )
+
+
+def test_template_names_the_store_and_has_no_price(make_promotion):
+    message = OpenAIService()._fallback_message(make_promotion())
+
+    assert message == "Oferta encontrada na Amazon: Notebook Acer Aspire 5"
+
+
 def test_fallback_copy_has_no_link(make_promotion):
     service = OpenAIService()
     assert service.client is None  # tests run without an OpenAI key

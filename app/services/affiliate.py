@@ -51,20 +51,22 @@ def build_affiliate_url(asin_or_url: str, partner_tag: str) -> str:
     )
 
 
-def compose_with_link(text: str, link: str, max_length: int) -> str:
-    """Build the final message: the copy followed by the affiliate link.
+def compose_with_link(text: str, link: str, max_length: int, details: str = "") -> str:
+    """Build the final message: the copy, the details, then the affiliate link.
 
     Guarantees that the affiliate link is the only URL in the message, that it
-    sits at the end, and that it is never cut: when the message would exceed
-    max_length, the copy is shortened instead.
+    sits at the end, and that neither it nor the details (the price and when it
+    was checked) are ever cut: when the message would exceed max_length, the
+    copy is shortened instead.
 
     Lengths are measured in UTF-16 code units, the unit Telegram uses for text.
     It is never smaller than the character count, so emoji-heavy copy cannot
     overflow the limit whichever way the API counts.
     """
-    budget = max_length - _utf16_len(LINK_SEPARATOR) - _utf16_len(link)
+    tail = f"{details}{LINK_SEPARATOR}{link}" if details else link
+    budget = max_length - _utf16_len(LINK_SEPARATOR) - _utf16_len(tail)
     if budget <= 0:
-        raise ValueError("link does not fit within max_length")
+        raise ValueError("details and link do not fit within max_length")
 
     copy = _URL_PATTERN.sub("", text)
     copy = "\n".join(line.rstrip() for line in copy.strip().splitlines())
@@ -73,9 +75,9 @@ def compose_with_link(text: str, link: str, max_length: int) -> str:
         copy = _truncate_utf16(copy, budget - _utf16_len(ELLIPSIS)).rstrip() + ELLIPSIS
 
     if not copy:
-        return link
+        return tail
 
-    return f"{copy}{LINK_SEPARATOR}{link}"
+    return f"{copy}{LINK_SEPARATOR}{tail}"
 
 
 def _utf16_len(text: str) -> int:

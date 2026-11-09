@@ -1,5 +1,6 @@
 import logging
 from contextlib import nullcontext
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
 
 import httpx
@@ -14,6 +15,7 @@ from app.schemas.promotion_schema import PendingDeliveryResponse
 from app.services.openai_service import OpenAIService
 from app.services.promotion_delivery_service import (
     DeliveryInProgressError,
+    PriceExpiredError,
     PromotionAlreadySentError,
     PromotionDeliveryService,
 )
@@ -51,6 +53,42 @@ def test_sends_the_tagged_affiliate_link(
     sent = telegram_service.send_promotion.call_args.kwargs
     assert sent["link"] == "https://www.amazon.com.br/dp/B0CNOTE001?tag=test-20"
     repository.mark_as_sent.assert_called_once()
+
+
+def test_price_details_come_from_the_stored_numbers(
+    delivery, telegram_service, make_promotion
+):
+    delivery.deliver_to_telegram(make_promotion())
+
+    details = telegram_service.send_promotion.call_args.kwargs["details"]
+    assert details.startswith("R$ 3.299,90 (antes R$ 4.299,90, 23% de desconto)\n")
+
+
+def test_promotion_without_a_price_is_sent_without_details(
+    delivery, telegram_service, make_promotion
+):
+    delivery.deliver_to_telegram(
+        make_promotion(
+            original_price=None, discounted_price=None, discount_percentage=None
+        )
+    )
+
+    assert telegram_service.send_promotion.call_args.kwargs["details"] == ""
+
+
+def test_expired_price_gives_up_at_once_without_posting(
+    delivery, repository, openai_service, telegram_service, make_promotion
+):
+    promotion = make_promotion(created_at=datetime.now(UTC) - timedelta(hours=25))
+
+    with pytest.raises(PriceExpiredError):
+        delivery.deliver_to_telegram(promotion)
+
+    openai_service.generate_sales_copy.assert_not_called()
+    telegram_service.send_promotion.assert_not_called()
+    recorded = repository.record_failure.call_args.kwargs
+    assert recorded["give_up"] is True
+    assert recorded["attempts"] == 0  # nothing was attempted
 
 
 def test_reuses_persisted_copy_instead_of_paying_again(

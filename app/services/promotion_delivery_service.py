@@ -1,6 +1,7 @@
 import logging
 from collections.abc import Iterator
 from contextlib import contextmanager, suppress
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import inspect
 
@@ -12,10 +13,15 @@ from app.models.promotions import Promotion, PromotionStatus
 from app.repositories.promotion_repo import PromotionRepository
 from app.schemas.promotion_schema import PendingDeliveryResponse
 from app.services.affiliate import build_affiliate_url
+from app.services.formatting import format_price_details
 from app.services.openai_service import OpenAIService
 from app.services.telegram_service import TelegramService
 
 logger = logging.getLogger(__name__)
+
+# A posted price must have been read from the store at most this long ago (the
+# Amazon Associates rules, and a sensible limit for any store).
+PRICE_MAX_AGE = timedelta(hours=24)
 
 
 class DeliveryInProgressError(DeliveryError):
@@ -30,6 +36,13 @@ class PromotionAlreadySentError(DeliveryError):
 
     status_code = 409
     error_code = "promotion_already_sent"
+
+
+class PriceExpiredError(DeliveryError):
+    """The price was read too long ago to be posted."""
+
+    status_code = 409
+    error_code = "price_expired"
 
 
 class PromotionDeliveryService:
@@ -99,6 +112,19 @@ class PromotionDeliveryService:
             yield
 
     def _deliver(self, promotion: Promotion) -> Promotion:
+        if _price_expired(promotion):
+            # Retrying cannot make the price recent again: give up at once
+            # instead of spending the remaining attempts.
+            self.promotion_repository.record_failure(
+                promotion,
+                attempts=promotion.attempts,
+                error="Price read more than 24 hours ago; not posted",
+                give_up=True,
+            )
+            raise PriceExpiredError(
+                f"Promotion {promotion.id} has a price older than 24 hours"
+            )
+
         delivered = False
 
         try:
@@ -122,6 +148,14 @@ class PromotionDeliveryService:
                 message=message,
                 link=affiliate_url,
                 image_url=promotion.image_url,
+                # The price comes from the stored numbers, stamped with when it
+                # was collected: a posted message is never updated.
+                details=format_price_details(
+                    discounted_price=promotion.discounted_price,
+                    original_price=promotion.original_price,
+                    discount_percentage=promotion.discount_percentage,
+                    checked_at=promotion.created_at,
+                ),
             )
             delivered = True
             return self.promotion_repository.mark_as_sent(promotion)
@@ -200,3 +234,12 @@ class PromotionDeliveryService:
                 "AMAZON_PARTNER_TAG is not configured; refusing to send links "
                 "that earn no commission"
             )
+
+
+def _price_expired(promotion: Promotion) -> bool:
+    # Prices are read when the promotion is collected, so created_at is when
+    # the store reported this one.
+    return (
+        promotion.discounted_price is not None
+        and datetime.now(UTC) - promotion.created_at > PRICE_MAX_AGE
+    )

@@ -100,3 +100,13 @@ def test_returns_only_the_link_when_copy_is_empty():
 def test_rejects_link_that_does_not_fit():
     with pytest.raises(ValueError):
         compose_with_link("Oferta", LINK, 10)
+
+
+def test_details_sit_before_the_link_and_are_never_cut():
+    # The price and when it was checked must reach the group exactly as built.
+    details = "R$ 49,90 (35% de desconto)\nPreço verificado em 09/11/2026 às 14:11"
+
+    message = compose_with_link("a" * 1500, LINK, 1024, details=details)
+
+    assert message.endswith(f"…\n\n{details}\n\n{LINK}")
+    assert utf16_len(message) <= 1024

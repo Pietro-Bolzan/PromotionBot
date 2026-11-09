@@ -121,18 +121,21 @@ class TelegramService:
         message: str,
         link: str,
         image_url: str | None = None,
+        details: str = "",
     ) -> None:
         if image_url:
             try:
                 self.send_photo(
                     image_url=image_url,
-                    caption=compose_with_link(message, link, CAPTION_MAX_LENGTH),
+                    caption=compose_with_link(
+                        message, link, CAPTION_MAX_LENGTH, details
+                    ),
                 )
                 return
             except PHOTO_NOT_POSTED:
                 pass  # usually a bad image URL: the text below still carries the link
 
-        self.send_message(compose_with_link(message, link, MESSAGE_MAX_LENGTH))
+        self.send_message(compose_with_link(message, link, MESSAGE_MAX_LENGTH, details))
 
     def _call(self, method: str, payload: dict) -> None:
         if not settings.telegram_bot_token or not settings.telegram_chat_id:
