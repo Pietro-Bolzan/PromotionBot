@@ -22,6 +22,8 @@ def test_only_products_at_or_above_the_minimum_discount_are_collected(
 ):
     monkeypatch.setattr(settings, "amazon_min_discount_percent", minimum)
 
-    collected = {candidate.asin for candidate in AmazonService().fetch_promotions()}
+    collected = {
+        candidate.external_id for candidate in AmazonService().fetch_promotions()
+    }
 
     assert collected == expected

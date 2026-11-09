@@ -135,8 +135,8 @@ def test_one_failure_does_not_stop_the_rest_of_the_batch(
     # promotions can only be reproduced against a real database; that scenario
     # belongs to the integration tests.
     repository.list_pending.return_value = [
-        make_promotion(asin="B0CNOTE001"),
-        make_promotion(asin="B0CPHONE02"),
+        make_promotion(external_id="B0CNOTE001"),
+        make_promotion(external_id="B0CPHONE02"),
     ]
     telegram_service.send_promotion.side_effect = [ConnectionError("down"), None]
 
@@ -285,9 +285,9 @@ def test_paused_channel_leaves_the_rest_of_the_batch_queued(
     delivery, repository, telegram_service, make_promotion
 ):
     repository.list_pending.return_value = [
-        make_promotion(asin="B0CNOTE001"),
-        make_promotion(asin="B0CPHONE02"),
-        make_promotion(asin="B0CTABLE03"),
+        make_promotion(external_id="B0CNOTE001"),
+        make_promotion(external_id="B0CPHONE02"),
+        make_promotion(external_id="B0CTABLE03"),
     ]
     telegram_service.send_promotion.side_effect = CircuitOpenError("Telegram paused")
 

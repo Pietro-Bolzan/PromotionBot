@@ -1,6 +1,7 @@
 from decimal import Decimal
 from unittest.mock import MagicMock
 
+from app.models.promotions import Store
 from app.schemas.promotion_schema import (
     PromotionCandidate,
     PromotionProcessingResult,
@@ -10,7 +11,8 @@ from app.services.promotion_service import PromotionService
 
 def candidate(asin: str = "B0CNOTE001") -> PromotionCandidate:
     return PromotionCandidate(
-        asin=asin,
+        store=Store.AMAZON,
+        external_id=asin,
         title="Notebook",
         original_price=Decimal("100.00"),
         discounted_price=Decimal("70.00"),

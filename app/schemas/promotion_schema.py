@@ -4,31 +4,37 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, HttpUrl
 
-from app.models.promotions import PromotionStatus
+from app.models.promotions import PromotionStatus, Store
 
 
 class PromotionCandidate(BaseModel):
-    asin: str = Field(min_length=1, max_length=20)
+    """A product offered by a source, before deduplication."""
+
+    store: Store
+    external_id: str = Field(min_length=1, max_length=64)
     title: str = Field(min_length=1, max_length=500)
-    original_price: Decimal = Field(ge=0)
-    discounted_price: Decimal = Field(ge=0)
-    discount_percentage: Decimal = Field(ge=0)
+    original_price: Decimal | None = Field(default=None, ge=0)
+    discounted_price: Decimal | None = Field(default=None, ge=0)
+    discount_percentage: Decimal | None = Field(default=None, ge=0, le=100)
     product_url: HttpUrl
+    affiliate_url: HttpUrl | None = None
     image_url: HttpUrl | None = None
-    category: str = Field(min_length=1, max_length=120)
+    category: str | None = Field(default=None, min_length=1, max_length=120)
     rating: Decimal | None = Field(default=None, ge=0, le=5)
 
 
 class PromotionResponse(BaseModel):
     id: UUID
-    asin: str
+    store: Store
+    external_id: str
     title: str
-    original_price: Decimal
-    discounted_price: Decimal
-    discount_percentage: Decimal
+    original_price: Decimal | None
+    discounted_price: Decimal | None
+    discount_percentage: Decimal | None
     product_url: str
+    affiliate_url: str | None
     image_url: str | None
-    category: str
+    category: str | None
     rating: Decimal | None
     status: PromotionStatus
     attempts: int

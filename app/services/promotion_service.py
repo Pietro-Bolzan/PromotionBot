@@ -1,5 +1,7 @@
 from datetime import UTC, datetime, timedelta
 
+from pydantic import HttpUrl
+
 from app.models.promotions import Promotion, PromotionStatus
 from app.repositories.promotion_repo import PromotionRepository
 from app.schemas.promotion_schema import PromotionProcessingResult
@@ -24,20 +26,23 @@ class PromotionService:
 
         for candidate in candidates:
             if self.promotion_repository.has_open_or_recent(
-                asin=candidate.asin,
+                store=candidate.store,
+                external_id=candidate.external_id,
                 cutoff=cutoff,
             ):
                 duplicates_skipped += 1
                 continue
 
             promotion = Promotion(
-                asin=candidate.asin,
+                store=candidate.store,
+                external_id=candidate.external_id,
                 title=candidate.title,
                 original_price=candidate.original_price,
                 discounted_price=candidate.discounted_price,
                 discount_percentage=candidate.discount_percentage,
                 product_url=str(candidate.product_url),
-                image_url=str(candidate.image_url) if candidate.image_url else None,
+                affiliate_url=_optional_url(candidate.affiliate_url),
+                image_url=_optional_url(candidate.image_url),
                 category=candidate.category,
                 rating=candidate.rating,
                 status=PromotionStatus.PENDING,
@@ -53,3 +58,7 @@ class PromotionService:
             saved=saved,
             duplicates_skipped=duplicates_skipped,
         )
+
+
+def _optional_url(url: HttpUrl | None) -> str | None:
+    return str(url) if url else None

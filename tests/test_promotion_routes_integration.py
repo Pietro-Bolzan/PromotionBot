@@ -18,6 +18,7 @@ from app.dependencies import (
     get_telegram_service,
 )
 from app.main import app
+from app.models.promotions import Store
 from app.schemas.promotion_schema import PromotionCandidate
 
 pytestmark = pytest.mark.integration
@@ -68,7 +69,8 @@ def test_run_route_collects_from_the_injected_source(committed, client):
     amazon = override(get_amazon_service, MagicMock())
     amazon.fetch_promotions.return_value = [
         PromotionCandidate(
-            asin="B0INJECT01",
+            store=Store.AMAZON,
+            external_id="B0INJECT01",
             title="Produto injetado",
             original_price=Decimal("100.00"),
             discounted_price=Decimal("70.00"),

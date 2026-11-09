@@ -10,10 +10,11 @@ from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
+from sqlalchemy.exc import IntegrityError
 
 from app.core.config import settings
-from app.models.promotions import Promotion, PromotionStatus
+from app.models.promotions import Promotion, PromotionStatus, Store
 from app.repositories.promotion_repo import PromotionRepository
 from app.schemas.promotion_schema import (
     PendingDeliveryResponse,
@@ -44,7 +45,8 @@ def collect(db, *asins: str) -> PromotionProcessingResult:
     amazon = MagicMock()
     amazon.fetch_promotions.return_value = [
         PromotionCandidate(
-            asin=asin,
+            store=Store.AMAZON,
+            external_id=asin,
             title="Produto",
             original_price=Decimal("100.00"),
             discounted_price=Decimal("70.00"),
@@ -60,7 +62,7 @@ def collect(db, *asins: str) -> PromotionProcessingResult:
 
 
 def rows_for(db, asin: str = ASIN) -> int:
-    return db.scalar(select(func.count()).where(Promotion.asin == asin))
+    return db.scalar(select(func.count()).where(Promotion.external_id == asin))
 
 
 @pytest.fixture
@@ -102,7 +104,9 @@ def test_open_row_blocks_the_product_even_outside_the_window(
 
     # Checked on the query itself: otherwise the unique index would hide a
     # broken query by rejecting the insert anyway.
-    assert PromotionRepository(db_session).has_open_or_recent(ASIN, cutoff=ago(24))
+    assert PromotionRepository(db_session).has_open_or_recent(
+        Store.AMAZON, ASIN, cutoff=ago(24)
+    )
     assert collect(db_session, ASIN).saved == 0
 
 
@@ -125,6 +129,25 @@ def test_unique_index_settles_a_race_the_check_cannot_see(db_session, make_promo
 
     assert repository.save_unless_duplicate(make_promotion()) is False
     assert rows_for(db_session) == 1  # and the session is still usable
+
+
+def test_same_id_in_another_store_is_another_product(db_session, make_promotion):
+    add_row(db_session, make_promotion, status=PromotionStatus.PENDING)
+    repository = PromotionRepository(db_session)
+
+    assert not repository.has_open_or_recent(Store.SHOPEE, ASIN, cutoff=ago(24))
+    assert repository.save_unless_duplicate(make_promotion(store=Store.SHOPEE))
+
+
+def test_database_rejects_an_unknown_store(db_session):
+    with pytest.raises(IntegrityError, match="promotion_store"):
+        db_session.execute(
+            text(
+                "INSERT INTO promotions (id, store, external_id, title, "
+                "product_url, status) VALUES (gen_random_uuid(), 'ebay', 'x', "
+                "'Produto', 'https://example.com', 'PENDING')"
+            )
+        )
 
 
 # --- retry ---
@@ -193,11 +216,15 @@ def test_database_error_does_not_poison_the_rest_of_the_batch(
 ):
     # Item 6 scenario, now permanent: a failed flush used to leave the session
     # unusable, so every promotion after the broken one failed too.
-    broken = add_row(db_session, make_promotion, asin="B0BROKEN01", created_at=ago(2))
-    healthy = add_row(db_session, make_promotion, asin="B0HEALTHY1", created_at=ago(1))
+    broken = add_row(
+        db_session, make_promotion, external_id="B0BROKEN01", created_at=ago(2)
+    )
+    healthy = add_row(
+        db_session, make_promotion, external_id="B0HEALTHY1", created_at=ago(1)
+    )
 
     def copy_that_breaks_the_first(promotion):
-        if promotion.asin == "B0BROKEN01":
+        if promotion.external_id == "B0BROKEN01":
             promotion.title = "x" * 600  # String(500): the next commit fails
         return "Copy"
 
@@ -228,7 +255,7 @@ def test_telegram_outage_spends_the_attempts_of_only_a_few_promotions(
         add_row(
             db_session,
             make_promotion,
-            asin=f"B0OUTAGE0{index}",
+            external_id=f"B0OUTAGE0{index}",
             created_at=ago(5 - index),
         )
     openai_service = MagicMock()
@@ -248,7 +275,7 @@ def test_telegram_outage_spends_the_attempts_of_only_a_few_promotions(
 
     attempts = sorted(
         db_session.scalars(
-            select(Promotion.attempts).where(Promotion.asin.like("B0OUTAGE%"))
+            select(Promotion.attempts).where(Promotion.external_id.like("B0OUTAGE%"))
         )
     )
     assert first == PendingDeliveryResponse(processed=3, sent=0, failed=3)

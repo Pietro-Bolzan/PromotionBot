@@ -7,7 +7,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models.promotions import Promotion, PromotionStatus
+from app.models.promotions import Promotion, PromotionStatus, Store
 
 # Fixed, arbitrary key that identifies the delivery lock among the advisory
 # locks of this database (shown in pg_locks).
@@ -18,15 +18,18 @@ class PromotionRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def has_open_or_recent(self, asin: str, cutoff: datetime) -> bool:
-        """Whether this ASIN must not be collected again right now.
+    def has_open_or_recent(
+        self, store: Store, external_id: str, cutoff: datetime
+    ) -> bool:
+        """Whether this product must not be collected again right now.
 
         True when the product still has an open row (PENDING, of any age), or
         had any row created or sent inside the window. Status alone is never
         enough: a FAILED row inside the window also blocks a new one.
         """
         statement = select(Promotion.id).where(
-            Promotion.asin == asin,
+            Promotion.store == store,
+            Promotion.external_id == external_id,
             or_(
                 Promotion.status == PromotionStatus.PENDING,
                 Promotion.created_at >= cutoff,
@@ -44,7 +47,7 @@ class PromotionRepository:
         return promotion
 
     def save_unless_duplicate(self, promotion: Promotion) -> bool:
-        """Insert a new PENDING promotion; False if the ASIN already has one.
+        """Insert a new PENDING promotion; False if the product already has one.
 
         Catches the race the pre-check cannot: two runs checking at the same
         time and both inserting. The partial unique index rejects the second.
@@ -53,7 +56,7 @@ class PromotionRepository:
             self.save(promotion)
         except IntegrityError as exc:
             self.db.rollback()
-            if _constraint_name(exc) == PENDING_ASIN_CONSTRAINT:
+            if _constraint_name(exc) == PENDING_PRODUCT_CONSTRAINT:
                 return False
             raise
 
@@ -148,7 +151,7 @@ class PromotionRepository:
         return list(self.db.scalars(statement).all())
 
 
-PENDING_ASIN_CONSTRAINT = "uq_promotions_pending_asin"
+PENDING_PRODUCT_CONSTRAINT = "uq_promotions_pending_product"
 
 
 def _constraint_name(exc: IntegrityError) -> str | None:

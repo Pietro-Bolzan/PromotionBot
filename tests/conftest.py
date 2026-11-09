@@ -44,11 +44,12 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 @pytest.fixture
 def make_promotion():
     """Build an unsaved Promotion; any field can be overridden."""
-    from app.models.promotions import Promotion, PromotionStatus
+    from app.models.promotions import Promotion, PromotionStatus, Store
 
     def _make(**overrides) -> Promotion:
         values = {
-            "asin": "B0CNOTE001",
+            "store": Store.AMAZON,
+            "external_id": "B0CNOTE001",
             "title": "Notebook Acer Aspire 5",
             "original_price": Decimal("4299.90"),
             "discounted_price": Decimal("3299.90"),
@@ -142,11 +143,12 @@ def committed(test_engine):
     from sqlalchemy import delete
 
     from app.db.database import SessionLocal
-    from app.models.promotions import Promotion, PromotionStatus
+    from app.models.promotions import Promotion, PromotionStatus, Store
 
     def _insert(**fields) -> Promotion:
         values = {
-            "asin": "B0RACE0001",
+            "store": Store.AMAZON,
+            "external_id": "B0RACE0001",
             "title": "Produto",
             "original_price": Decimal("100.00"),
             "discounted_price": Decimal("70.00"),
