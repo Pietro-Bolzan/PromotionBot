@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     )
 
     # --- application ---
-    app_name: str = "Amazon Bot"
+    app_name: str = "Promotion Bot"
     environment: str = "local"
     log_level: str = "INFO"
     log_format: Literal["text", "json"] = "text"
