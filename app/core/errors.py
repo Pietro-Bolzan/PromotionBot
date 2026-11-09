@@ -17,6 +17,13 @@ class ConfigurationError(AppError):
     error_code = "not_configured"
 
 
+class PromotionSourceError(AppError):
+    """A store's API could not be read, or refused the request."""
+
+    status_code = 502
+    error_code = "source_unavailable"
+
+
 class DeliveryError(AppError):
     """A promotion could not be delivered to a messaging channel."""
 

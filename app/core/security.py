@@ -44,6 +44,7 @@ def mask_secrets(text: str) -> str:
         settings.telegram_bot_token,
         settings.openai_api_key,
         settings.app_api_key,
+        settings.shopee_secret,
     ):
         if secret:
             text = text.replace(secret, "***")

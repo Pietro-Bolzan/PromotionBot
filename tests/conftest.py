@@ -36,6 +36,9 @@ os.environ.update(
         "TELEGRAM_CHAT_ID": "",
         "SCHEDULER_ENABLED": "false",
         "PROMOTION_SOURCES": "mock",
+        "SHOPEE_APP_ID": "",
+        "SHOPEE_SECRET": "",
+        "SHOPEE_KEYWORDS": "",
         "DELIVERY_MAX_ATTEMPTS": "3",
     }
 )

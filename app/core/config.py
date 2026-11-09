@@ -7,7 +7,7 @@ from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # Every source app.sources.registry can build.
-SourceName = Literal["mock"]
+SourceName = Literal["mock", "shopee"]
 
 
 class Settings(BaseSettings):
@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     # --- amazon ---
     amazon_partner_tag: str = ""
 
+    # --- shopee ---
+    shopee_app_id: str = ""
+    shopee_secret: str = ""
+    shopee_keywords: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    shopee_items_per_keyword: int = Field(default=10, ge=1, le=50)
+
     # --- openai ---
     openai_api_key: str = ""
     openai_model: str = "gpt-4.1-mini"
@@ -79,8 +85,13 @@ class Settings(BaseSettings):
     @classmethod
     def _split_sources(cls, value: Any) -> Any:
         if isinstance(value, str):
-            return [name.strip().lower() for name in value.split(",") if name.strip()]
+            return [name.lower() for name in _split_list(value)]
         return value
+
+    @field_validator("shopee_keywords", mode="before")
+    @classmethod
+    def _split_keywords(cls, value: Any) -> Any:
+        return _split_list(value) if isinstance(value, str) else value
 
     @field_validator("promotion_sources")
     @classmethod
@@ -88,6 +99,25 @@ class Settings(BaseSettings):
         if len(set(value)) != len(value):
             raise ValueError("a promotion source is listed more than once")
         return value
+
+    @model_validator(mode="after")
+    def _enabled_sources_are_configured(self) -> Self:
+        if "shopee" in self.promotion_sources:
+            missing = [
+                name
+                for name, value in (
+                    ("SHOPEE_APP_ID", self.shopee_app_id),
+                    ("SHOPEE_SECRET", self.shopee_secret),
+                    ("SHOPEE_KEYWORDS", self.shopee_keywords),
+                )
+                if not value
+            ]
+            if missing:
+                raise ValueError(
+                    f"PROMOTION_SOURCES includes shopee but {', '.join(missing)} "
+                    "is not set"
+                )
+        return self
 
     @model_validator(mode="after")
     def _scheduler_never_posts_mock_products(self) -> Self:
@@ -106,6 +136,11 @@ class Settings(BaseSettings):
         except (ZoneInfoNotFoundError, ValueError) as error:
             raise ValueError(f"unknown timezone: {value!r}") from error
         return value
+
+
+def _split_list(value: str) -> list[str]:
+    """ "a, b ,," -> ["a", "b"]: how list settings are written in .env."""
+    return [item.strip() for item in value.split(",") if item.strip()]
 
 
 settings = Settings()
