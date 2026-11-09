@@ -10,7 +10,7 @@ import pytest
 from app.core.circuit_breaker import CircuitOpenError
 from app.core.config import settings
 from app.core.errors import ConfigurationError
-from app.models.promotions import PromotionStatus
+from app.models.promotions import PromotionStatus, Store
 from app.schemas.promotion_schema import PendingDeliveryResponse
 from app.services.openai_service import OpenAIService
 from app.services.promotion_delivery_service import (
@@ -117,15 +117,45 @@ def test_missing_tag_refuses_before_spending_or_failing(
     assert promotion.status == PromotionStatus.PENDING
 
 
-def test_missing_tag_stops_the_batch_before_reading_pending(
+def test_missing_tag_holds_amazon_and_delivers_the_other_stores(
     delivery, repository, monkeypatch
 ):
     monkeypatch.setattr(settings, "amazon_partner_tag", "")
+    repository.list_pending.return_value = []
 
-    with pytest.raises(ConfigurationError, match="AMAZON_PARTNER_TAG"):
-        delivery.deliver_pending_to_telegram()
+    result = delivery.deliver_pending_to_telegram()
 
-    repository.list_pending.assert_not_called()
+    assert repository.list_pending.call_args.kwargs["exclude_stores"] == [Store.AMAZON]
+    assert result.skipped_stores == [Store.AMAZON]
+
+
+def test_other_stores_send_the_tracked_link_their_api_returned(
+    delivery, telegram_service, make_promotion, monkeypatch
+):
+    # The Amazon tag has nothing to do with them, so it is not even required.
+    monkeypatch.setattr(settings, "amazon_partner_tag", "")
+    promotion = make_promotion(
+        store=Store.SHOPEE,
+        external_id="22912345678",
+        product_url="https://shopee.com.br/product/1/22912345678",
+        affiliate_url="https://s.shopee.com.br/AbC123",
+    )
+
+    delivery.deliver_to_telegram(promotion)
+
+    sent = telegram_service.send_promotion.call_args.kwargs
+    assert sent["link"] == "https://s.shopee.com.br/AbC123"
+
+
+def test_other_store_without_a_tracked_link_is_a_failed_attempt(
+    delivery, repository, make_promotion
+):
+    promotion = make_promotion(store=Store.SHOPEE, affiliate_url=None)
+
+    with pytest.raises(ValueError, match="no affiliate link"):
+        delivery.deliver_to_telegram(promotion)
+
+    repository.record_failure.assert_called_once()
 
 
 def test_invalid_product_url_fails_without_calling_openai(

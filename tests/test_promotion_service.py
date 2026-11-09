@@ -3,6 +3,7 @@ from unittest.mock import MagicMock
 
 import httpx
 import pytest
+from pydantic import ValidationError
 
 from app.core.config import settings
 from app.models.promotions import Store
@@ -73,6 +74,16 @@ def test_minimum_discount_applies_to_every_source(
 
     assert result.saved == saved
     assert result.below_min_discount == 1 - saved
+
+
+def test_other_stores_must_bring_their_tracked_link():
+    with pytest.raises(ValidationError, match="affiliate_url"):
+        PromotionCandidate(
+            store=Store.SHOPEE,
+            external_id="22912345678",
+            title="Fone",
+            product_url="https://shopee.com.br/product/1/22912345678",
+        )
 
 
 def test_a_failing_source_does_not_stop_the_others(repository, caplog):

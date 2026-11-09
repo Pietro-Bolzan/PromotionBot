@@ -1,4 +1,4 @@
-from collections.abc import Iterator
+from collections.abc import Collection, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from uuid import UUID
@@ -140,13 +140,17 @@ class PromotionRepository:
 
         return promotion
 
-    def list_pending(self, limit: int = 10) -> list[Promotion]:
+    def list_pending(
+        self, limit: int = 10, exclude_stores: Collection[Store] = ()
+    ) -> list[Promotion]:
         statement = (
             select(Promotion)
             .where(Promotion.status == PromotionStatus.PENDING)
             .order_by(Promotion.created_at.asc())
             .limit(limit)
         )
+        if exclude_stores:
+            statement = statement.where(Promotion.store.not_in(exclude_stores))
 
         return list(self.db.scalars(statement).all())
 

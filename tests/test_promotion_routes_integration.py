@@ -62,7 +62,12 @@ def test_pending_route_returns_the_counts(committed, client):
 
     response = client.post("/api/promotions/send-pending-telegram", headers=API_KEY)
 
-    assert response.json() == {"processed": 1, "sent": 1, "failed": 0}
+    assert response.json() == {
+        "processed": 1,
+        "sent": 1,
+        "failed": 0,
+        "skipped_stores": [],
+    }
 
 
 def test_run_route_collects_from_the_injected_source(committed, client):

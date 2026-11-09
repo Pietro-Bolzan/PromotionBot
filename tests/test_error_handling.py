@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from app.core.circuit_breaker import CircuitOpenError
 from app.core.config import settings
+from app.core.errors import ConfigurationError
 from app.dependencies import get_delivery_service
 from app.main import app
 from app.services.telegram_service import TelegramApiError
@@ -49,9 +50,9 @@ def test_invalid_parameter_lists_what_is_wrong(client):
     assert body["details"][0]["loc"] == ["query", "limit"]
 
 
-def test_missing_configuration_is_a_503_not_a_crash(client, monkeypatch):
+def test_missing_configuration_is_a_503_not_a_crash(client):
     # Regression: the missing partner tag used to surface as a bare 500.
-    monkeypatch.setattr(settings, "amazon_partner_tag", "")
+    delivery_failing_with(ConfigurationError("AMAZON_PARTNER_TAG is not configured"))
 
     response = client.post(SEND_PENDING, headers=API_KEY)
 

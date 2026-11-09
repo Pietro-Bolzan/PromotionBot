@@ -9,7 +9,7 @@ from app.core.circuit_breaker import CircuitOpenError
 from app.core.config import settings
 from app.core.errors import ConfigurationError, DeliveryError
 from app.core.security import describe_error
-from app.models.promotions import Promotion, PromotionStatus
+from app.models.promotions import Promotion, PromotionStatus, Store
 from app.repositories.promotion_repo import PromotionRepository
 from app.schemas.promotion_schema import PendingDeliveryResponse
 from app.services.affiliate import build_affiliate_url
@@ -57,7 +57,8 @@ class PromotionDeliveryService:
         self.telegram_service = telegram_service
 
     def deliver_to_telegram(self, promotion: Promotion) -> Promotion:
-        self._require_partner_tag()
+        if promotion.store == Store.AMAZON:
+            _require_partner_tag()
 
         with self._exclusive_delivery():
             # Read again under the lock: a batch may have sent it after the
@@ -70,10 +71,19 @@ class PromotionDeliveryService:
             return self._deliver(promotion)
 
     def deliver_pending_to_telegram(self, limit: int = 10) -> PendingDeliveryResponse:
-        self._require_partner_tag()
+        # A missing tag is a configuration problem, not a problem with any
+        # promotion: Amazon's stay queued, untouched (no OpenAI call, no
+        # attempt spent), while the other stores' are delivered.
+        skipped = [] if settings.amazon_partner_tag.strip() else [Store.AMAZON]
+        if skipped:
+            logger.warning(
+                "Amazon promotions held: AMAZON_PARTNER_TAG is not configured"
+            )
 
         with self._exclusive_delivery():
-            promotions = self.promotion_repository.list_pending(limit=limit)
+            promotions = self.promotion_repository.list_pending(
+                limit=limit, exclude_stores=skipped
+            )
 
             sent = 0
             failed = 0
@@ -97,6 +107,7 @@ class PromotionDeliveryService:
             processed=sent + failed,
             sent=sent,
             failed=failed,
+            skipped_stores=skipped,
         )
 
     @contextmanager
@@ -130,10 +141,7 @@ class PromotionDeliveryService:
         try:
             # Built before the copy so an invalid product URL fails without
             # spending an OpenAI call.
-            affiliate_url = build_affiliate_url(
-                promotion.product_url,
-                settings.amazon_partner_tag,
-            )
+            affiliate_url = _affiliate_link(promotion)
             message = promotion.generated_message
 
             if not message:
@@ -224,17 +232,6 @@ class PromotionDeliveryService:
         )
         return True
 
-    @staticmethod
-    def _require_partner_tag() -> None:
-        # A missing tag is a configuration error, not a problem with any
-        # promotion: it is checked before touching one, so it neither spends an
-        # OpenAI call nor marks anything as FAILED.
-        if not settings.amazon_partner_tag.strip():
-            raise ConfigurationError(
-                "AMAZON_PARTNER_TAG is not configured; refusing to send links "
-                "that earn no commission"
-            )
-
 
 def _price_expired(promotion: Promotion) -> bool:
     # Prices are read when the promotion is collected, so created_at is when
@@ -243,3 +240,25 @@ def _price_expired(promotion: Promotion) -> bool:
         promotion.discounted_price is not None
         and datetime.now(UTC) - promotion.created_at > PRICE_MAX_AGE
     )
+
+
+def _affiliate_link(promotion: Promotion) -> str:
+    """The link that earns the commission for this promotion's store."""
+    if promotion.store == Store.AMAZON:
+        return build_affiliate_url(promotion.product_url, settings.amazon_partner_tag)
+
+    # Shopee and AliExpress return the tracked link themselves; their product
+    # URL earns nothing.
+    if not promotion.affiliate_url:
+        raise ValueError(f"{promotion.store} promotion has no affiliate link")
+    return promotion.affiliate_url
+
+
+def _require_partner_tag() -> None:
+    # Checked before touching the promotion, so it neither spends an OpenAI
+    # call nor brings it closer to FAILED.
+    if not settings.amazon_partner_tag.strip():
+        raise ConfigurationError(
+            "AMAZON_PARTNER_TAG is not configured; refusing to send links that "
+            "earn no commission"
+        )

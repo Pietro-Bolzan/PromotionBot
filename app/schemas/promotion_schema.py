@@ -1,8 +1,9 @@
 from datetime import datetime
 from decimal import Decimal
+from typing import Self
 from uuid import UUID
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, model_validator
 
 from app.models.promotions import PromotionStatus, Store
 
@@ -21,6 +22,14 @@ class PromotionCandidate(BaseModel):
     image_url: HttpUrl | None = None
     category: str | None = Field(default=None, min_length=1, max_length=120)
     rating: Decimal | None = Field(default=None, ge=0, le=5)
+
+    @model_validator(mode="after")
+    def _tracked_link_outside_amazon(self) -> Self:
+        # Amazon links are tagged at delivery; every other store's API returns
+        # the tracked link, and without it the promotion earns nothing.
+        if self.store != Store.AMAZON and self.affiliate_url is None:
+            raise ValueError(f"a {self.store} promotion needs its affiliate_url")
+        return self
 
 
 class PromotionResponse(BaseModel):
@@ -71,3 +80,6 @@ class PendingDeliveryResponse(BaseModel):
     processed: int
     sent: int
     failed: int
+    # Stores whose promotions stayed queued because their affiliate settings
+    # are missing (AMAZON_PARTNER_TAG).
+    skipped_stores: list[Store] = Field(default_factory=list)

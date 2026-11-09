@@ -150,6 +150,29 @@ def test_database_rejects_an_unknown_store(db_session):
         )
 
 
+def test_missing_amazon_tag_does_not_hold_back_other_stores(
+    db_session, make_promotion, delivery, monkeypatch
+):
+    monkeypatch.setattr(settings, "amazon_partner_tag", "")
+    amazon = add_row(db_session, make_promotion, created_at=ago(2))
+    shopee = add_row(
+        db_session,
+        make_promotion,
+        store=Store.SHOPEE,
+        external_id="22912345678",
+        affiliate_url="https://s.shopee.com.br/AbC123",
+        created_at=ago(1),
+    )
+
+    result = delivery.deliver_pending_to_telegram()
+    db_session.refresh(amazon)
+    db_session.refresh(shopee)
+
+    assert result.sent == 1
+    assert shopee.status == PromotionStatus.SENT
+    assert (amazon.status, amazon.attempts) == (PromotionStatus.PENDING, 0)
+
+
 # --- retry ---
 
 
