@@ -14,6 +14,7 @@ from app.models.promotions import Promotion
 from app.repositories.promotion_repo import PromotionRepository
 from app.schemas.error_schema import ErrorResponse
 from app.schemas.promotion_schema import (
+    CuratedPromotionRequest,
     GeneratedCopyResponse,
     PendingDeliveryResponse,
     PromotionDeliveryResponse,
@@ -55,6 +56,20 @@ def _get_promotion_or_404(
 @router.post("/run", response_model=PromotionProcessingResult)
 def run_promotions(promotion_service: PromotionServiceDep):
     return promotion_service.collect_pending_promotions()
+
+
+@router.post(
+    "/curated",
+    response_model=PromotionResponse,
+    status_code=status.HTTP_201_CREATED,
+    responses=_errors(409),
+)
+def create_curated_promotion(
+    request: CuratedPromotionRequest,
+    promotion_service: PromotionServiceDep,
+):
+    """Queue an Amazon product picked by hand. It is posted without a price."""
+    return promotion_service.add_curated_amazon(request)
 
 
 @router.post(

@@ -14,6 +14,42 @@ ELLIPSIS = "\u2026"
 
 _ASIN_PATTERN = re.compile(r"[A-Z0-9]{10}")
 _URL_PATTERN = re.compile(r"https?://\S+", re.IGNORECASE)
+# Where the ASIN sits in the product URLs Amazon itself links to.
+_ASIN_IN_PATH = re.compile(
+    r"/(?:dp|gp/product|gp/aw/d)/([A-Z0-9]{10})(?:/|$)", re.IGNORECASE
+)
+
+
+def parse_asin(asin_or_url: str) -> str:
+    """Return the ASIN of an amazon.com.br product, given it or its URL.
+
+    Short links (amzn.to) are refused rather than followed: resolving them
+    would mean the bot requesting Amazon pages, which the Associates rules
+    forbid to automated tools.
+    """
+    value = asin_or_url.strip()
+    if "://" not in value:
+        asin = value.upper()
+        if not _ASIN_PATTERN.fullmatch(asin):
+            raise ValueError(f"invalid ASIN: {asin_or_url!r}")
+        return asin
+
+    parts = urlsplit(value)
+    _require_amazon_host(parts.hostname, asin_or_url)
+
+    match = _ASIN_IN_PATH.search(parts.path)
+    if not match:
+        raise ValueError(
+            f"no ASIN in {asin_or_url!r}; use the product page URL "
+            "(…/dp/ASIN) or the ASIN itself"
+        )
+    return match.group(1).upper()
+
+
+def _require_amazon_host(hostname: str | None, original: str) -> None:
+    host = (hostname or "").lower()
+    if host != AMAZON_DOMAIN and not host.endswith(f".{AMAZON_DOMAIN}"):
+        raise ValueError(f"not an {AMAZON_DOMAIN} URL: {original!r}")
 
 
 def build_affiliate_url(asin_or_url: str, partner_tag: str) -> str:
@@ -35,9 +71,7 @@ def build_affiliate_url(asin_or_url: str, partner_tag: str) -> str:
         value = f"https://www.{AMAZON_DOMAIN}/dp/{asin}"
 
     parts = urlsplit(value)
-    host = (parts.hostname or "").lower()
-    if host != AMAZON_DOMAIN and not host.endswith(f".{AMAZON_DOMAIN}"):
-        raise ValueError(f"not an {AMAZON_DOMAIN} URL: {asin_or_url!r}")
+    _require_amazon_host(parts.hostname, asin_or_url)
 
     query = [
         (key, val)

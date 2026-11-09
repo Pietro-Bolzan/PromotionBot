@@ -3,9 +3,10 @@ from decimal import Decimal
 from typing import Self
 from uuid import UUID
 
-from pydantic import BaseModel, Field, HttpUrl, model_validator
+from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
 
 from app.models.promotions import PromotionStatus, Store
+from app.services.affiliate import parse_asin
 
 
 class PromotionCandidate(BaseModel):
@@ -30,6 +31,37 @@ class PromotionCandidate(BaseModel):
         if self.store != Store.AMAZON and self.affiliate_url is None:
             raise ValueError(f"a {self.store} promotion needs its affiliate_url")
         return self
+
+
+class CuratedPromotionRequest(BaseModel):
+    """An Amazon product picked by hand, to be posted without a price.
+
+    The Associates rules only allow showing prices read from Amazon's API,
+    so there are no price fields: sending one is rejected, not ignored.
+    """
+
+    model_config = {"extra": "forbid"}
+
+    product: str = Field(
+        min_length=10,
+        max_length=1200,
+        description="ASIN or amazon.com.br product page URL",
+        examples=["B0CNOTE001"],
+    )
+    title: str = Field(min_length=1, max_length=500)
+    category: str | None = Field(default=None, min_length=1, max_length=120)
+    message: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=900,
+        description="Copy to post as is; without it, OpenAI writes one",
+    )
+
+    @field_validator("product")
+    @classmethod
+    def _amazon_product(cls, value: str) -> str:
+        # Normalized to the ASIN, the product's id in the database.
+        return parse_asin(value)
 
 
 class PromotionResponse(BaseModel):

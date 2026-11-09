@@ -1,6 +1,6 @@
 import pytest
 
-from app.services.affiliate import build_affiliate_url, compose_with_link
+from app.services.affiliate import build_affiliate_url, compose_with_link, parse_asin
 
 TAG = "meutag-20"
 LINK = "https://www.amazon.com.br/dp/B0CNOTE001?tag=meutag-20"
@@ -57,6 +57,38 @@ def test_rejects_non_amazon_urls(url):
 def test_rejects_invalid_asin(asin):
     with pytest.raises(ValueError):
         build_affiliate_url(asin, TAG)
+
+
+# --- parse_asin ---
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "B0CNOTE001",
+        " b0cnote001 ",
+        "https://www.amazon.com.br/dp/B0CNOTE001",
+        "https://www.amazon.com.br/Notebook-Acer/dp/B0CNOTE001/ref=sr_1_1?tag=x-20",
+        "https://amazon.com.br/gp/product/B0CNOTE001",
+        "https://www.amazon.com.br/gp/aw/d/B0CNOTE001?th=1",
+    ],
+)
+def test_finds_the_asin_in_what_amazon_links_to(value):
+    assert parse_asin(value) == "B0CNOTE001"
+
+
+@pytest.mark.parametrize(
+    ("value", "reason"),
+    [
+        ("https://amzn.to/3xYzAbC", "not an amazon.com.br URL"),
+        ("https://www.amazon.com/dp/B0CNOTE001", "not an amazon.com.br URL"),
+        ("https://www.amazon.com.br/s?k=notebook", "no ASIN"),
+        ("B0CNOTE00!", "invalid ASIN"),
+    ],
+)
+def test_refuses_what_is_not_an_amazon_br_product(value, reason):
+    with pytest.raises(ValueError, match=reason):
+        parse_asin(value)
 
 
 # --- compose_with_link ---

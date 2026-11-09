@@ -94,6 +94,54 @@ def test_run_route_collects_from_the_injected_source(committed, client):
     assert second["duplicates_skipped"] == 1
 
 
+CURATED = "/api/promotions/curated"
+
+
+def test_curated_amazon_product_is_queued_without_a_price(committed, client):
+    response = client.post(
+        CURATED,
+        headers=API_KEY,
+        json={
+            "product": "https://www.amazon.com.br/Fone/dp/B0CURATE01/ref=x?tag=a-20",
+            "title": "Fone JBL Tune 520BT",
+            "message": "Fone bom e barato, corre!",
+        },
+    )
+
+    body = response.json()
+    assert response.status_code == 201
+    assert (body["store"], body["external_id"]) == ("amazon", "B0CURATE01")
+    assert body["product_url"] == "https://www.amazon.com.br/dp/B0CURATE01"
+    assert body["discounted_price"] is None
+    assert body["generated_message"] == "Fone bom e barato, corre!"
+    assert body["status"] == "PENDING"
+
+
+def test_curating_a_queued_product_again_is_a_409(committed, client):
+    committed(external_id="B0CURATE02")
+
+    response = client.post(
+        CURATED, headers=API_KEY, json={"product": "B0CURATE02", "title": "Fone"}
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error_code"] == "duplicate_promotion"
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        # A price can only come from Amazon's API: refused, not ignored.
+        {"product": "B0CURATE03", "title": "Fone", "discounted_price": "99.90"},
+        {"product": "https://amzn.to/3xYzAbC", "title": "Fone"},
+    ],
+)
+def test_curated_request_is_validated(client, payload):
+    response = client.post(CURATED, headers=API_KEY, json=payload)
+
+    assert response.status_code == 422
+
+
 def test_generate_copy_route_persists_the_injected_copy(committed, client):
     openai_service = override(get_openai_service, MagicMock())
     openai_service.generate_sales_copy.return_value = "Copy injetada"

@@ -79,6 +79,8 @@ Regras:
 - não escreva preços, valores, percentuais de desconto, links nem URLs: o
   preço, a hora em que ele foi verificado e o link são adicionados
   automaticamente ao final
+- não invente informações que não estão acima, como frete grátis, estoque
+  ou cupom
 """
 
         client = self.client

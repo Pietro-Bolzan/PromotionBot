@@ -5,13 +5,26 @@ from datetime import UTC, datetime, timedelta
 from pydantic import HttpUrl
 
 from app.core.config import settings
+from app.core.errors import AppError
 from app.core.security import describe_error
-from app.models.promotions import Promotion, PromotionStatus
+from app.models.promotions import Promotion, PromotionStatus, Store
 from app.repositories.promotion_repo import PromotionRepository
-from app.schemas.promotion_schema import PromotionCandidate, PromotionProcessingResult
+from app.schemas.promotion_schema import (
+    CuratedPromotionRequest,
+    PromotionCandidate,
+    PromotionProcessingResult,
+)
+from app.services.affiliate import AMAZON_DOMAIN
 from app.sources.base import PromotionSource
 
 logger = logging.getLogger(__name__)
+
+
+class DuplicatePromotionError(AppError):
+    """The product is already queued, or was collected or posted recently."""
+
+    status_code = 409
+    error_code = "duplicate_promotion"
 
 
 class PromotionService:
@@ -45,6 +58,36 @@ class PromotionService:
                 self._collect(candidate, cutoff, result)
 
         return result
+
+    def add_curated_amazon(self, request: CuratedPromotionRequest) -> Promotion:
+        """Queue an Amazon product picked by hand, under the same dedup rules."""
+        asin = request.product
+        cutoff = datetime.now(UTC) - timedelta(hours=settings.dedup_window_hours)
+        duplicate = DuplicatePromotionError(
+            f"Amazon product {asin} is queued, or was collected or posted in "
+            f"the last {settings.dedup_window_hours} hours"
+        )
+
+        if self.promotion_repository.has_open_or_recent(
+            store=Store.AMAZON, external_id=asin, cutoff=cutoff
+        ):
+            raise duplicate
+
+        promotion = Promotion(
+            store=Store.AMAZON,
+            external_id=asin,
+            title=request.title,
+            category=request.category,
+            # Canonical: whatever tracking the pasted URL carried is dropped,
+            # and the partner tag is added at delivery.
+            product_url=f"https://www.{AMAZON_DOMAIN}/dp/{asin}",
+            generated_message=request.message,
+            status=PromotionStatus.PENDING,
+        )
+        if not self.promotion_repository.save_unless_duplicate(promotion):
+            raise duplicate
+
+        return promotion
 
     def _collect(
         self,
