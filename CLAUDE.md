@@ -1,7 +1,7 @@
-# Bot de Promoções Amazon — Contexto e Instruções de Trabalho
+# Bot de Promoções (Shopee, AliExpress, Amazon) — Contexto e Instruções de Trabalho
 
 > Arquivo de contexto para o Claude Code. Lido no início de toda sessão.
-> Última revisão: 09/11/2026 (fim da Fase 2), alinhado ao código e às preferências combinadas no chat.
+> Última revisão: 09/11/2026 (Fase 3 implementada, falta validar as APIs com credenciais reais).
 
 ---
 
@@ -43,7 +43,7 @@ Perfil de comunicação que eu espero de você:
 
 ## 4. Objetivo do projeto
 
-Aplicação que automatiza a divulgação de promoções da Amazon em canais de mensageria. Dois objetivos, ambos importantes:
+Aplicação que automatiza a divulgação de promoções de lojas com programa de afiliados e API oficial (Shopee e AliExpress; Amazon por curadoria manual até a Creators API ser liberada) em canais de mensageria. Decidido em 09/11/2026: o bot não é só da Amazon. Dois objetivos, ambos importantes:
 
 - **Portfólio:** o código precisa aguentar leitura crítica de um dev sênior em entrevista. Arquitetura limpa, testes, documentação, deploy funcionando.
 - **Renda extra:** precisa rodar 24/7 de forma confiável, com custo baixo de infraestrutura e de API de IA. A receita vem do link de afiliado — sem a tag na URL, o projeto não gera nada.
@@ -52,12 +52,12 @@ Ambos os objetivos implicam: **qualidade de produção, não protótipo**.
 
 ## 5. Fluxo funcional do sistema
 
-1. Busca promoções periodicamente (hoje: mock — ver Fase 3).
-2. Filtra por desconto mínimo (`AMAZON_MIN_DISCOUNT_PERCENT`) e descarta duplicatas: um ASIN não é coletado de novo se tiver linha `PENDING` (de qualquer idade) ou qualquer linha criada ou enviada nas últimas 24h.
-3. Persiste as aprovadas como `PENDING` — no máximo uma `PENDING` por ASIN, garantido por índice único parcial.
-4. Gera a copy em PT-BR via OpenAI **uma única vez** e reaproveita `generated_message` em todo reenvio; fallback para template fixo se a OpenAI falhar, estiver pausada pelo circuit breaker ou sem chave.
-5. Envia ao Telegram com foto (só texto se a foto for recusada), com o link de afiliado (`?tag=`) sempre no final. WhatsApp é a Fase 5.
-6. Sucesso → `SENT`. Falha → volta para `PENDING` com `attempts + 1` e `last_error`; ao atingir `DELIVERY_MAX_ATTEMPTS`, vira `FAILED` (terminal). Canal fora do ar (circuit breaker aberto) não gasta tentativa.
+1. Busca promoções periodicamente em cada fonte de `PROMOTION_SOURCES` (`shopee`, `aliexpress`; `mock` só em dev). Produtos da Amazon entram por curadoria manual (`POST /api/promotions/curated`), sem preço.
+2. Filtra por desconto mínimo (`MIN_DISCOUNT_PERCENT`, igual para todas as lojas) e descarta duplicatas: um produto (loja + id na loja) não é coletado de novo se tiver linha `PENDING` (de qualquer idade) ou qualquer linha criada ou enviada nas últimas `DEDUP_WINDOW_HOURS`. Uma fonte com falha não impede as outras.
+3. Persiste as aprovadas como `PENDING` — no máximo uma `PENDING` por produto, garantido por índice único parcial.
+4. Gera a copy em PT-BR via OpenAI **uma única vez**, sem preços, e reaproveita `generated_message` em todo reenvio; fallback para template fixo se a OpenAI falhar, estiver pausada, sem chave, ou se a copy mencionar preço.
+5. Envia ao Telegram com foto (só texto se a foto for recusada): copy + bloco de preço montado pelo código (com horário da verificação) + link de afiliado no final. Amazon: tag aplicada no envio; Shopee/AliExpress: link rastreado devolvido pela API. WhatsApp é a Fase 5.
+6. Sucesso → `SENT`. Falha → volta para `PENDING` com `attempts + 1` e `last_error`; ao atingir `DELIVERY_MAX_ATTEMPTS`, vira `FAILED` (terminal). Canal fora do ar (circuit breaker aberto) não gasta tentativa. Preço lido há mais de 24h → `FAILED` na hora, sem postar.
 7. Roda 24/7 em containers na nuvem (Fase 6), com endpoints de monitoramento e disparo manual.
 
 ## 6. Stack (definida — não sugerir troca sem motivo forte)
@@ -72,6 +72,7 @@ Ambos os objetivos implicam: **qualidade de produção, não protótipo**.
 | Validação/Config | Pydantic v2 + pydantic-settings |
 | Agendamento | APScheduler (`BackgroundScheduler`) |
 | HTTP client | httpx (síncrono) |
+| Fontes de promoções | Shopee Affiliate Open API (GraphQL), AliExpress Affiliate API (gateway IOP); Amazon por curadoria manual (Creators API quando liberada) |
 | IA | OpenAI Responses API; modelo via `OPENAI_MODEL` (padrão `gpt-4.1-mini`) |
 | Telegram | Telegram Bot API (HTTP direto) |
 | WhatsApp | a decidir na Fase 5 (Evolution API x Cloud API — seção 9) |
@@ -108,18 +109,19 @@ app/
   repositories/         PromotionRepository (inclui o advisory lock de entrega)
   schemas/              schemas Pydantic de entrada/saída + ErrorResponse
   scheduler/jobs.py     ciclo coletar → gerar copy → enviar
-  services/             amazon_service (mock), openai_service, telegram_service,
-                        promotion_service (coleta), promotion_delivery_service (entrega),
-                        affiliate (URL com tag), formatting (R$ e %)
-alembic/versions/       2 migrations
-tests/                  156 testes (unitários + integração com Postgres real)
+  services/             openai_service, telegram_service, promotion_service (coleta e
+                        curadoria), promotion_delivery_service (entrega), affiliate (tag
+                        Amazon, ASIN, composição da mensagem), formatting (R$, %, bloco de preço)
+  sources/              base (Protocol PromotionSource), registry, mock, shopee, aliexpress
+alembic/versions/       3 migrations
+tests/                  224 testes (unitários + integração com Postgres real)
 scripts/run_tests.py    pytest chamado pelo hook do pre-commit
 ```
 
 ### Modelo de dados
 
-Tabela `promotions`: `id` (UUID), `asin`, `title`, `original_price`, `discounted_price`, `discount_percentage`, `rating` (`Numeric` → `Decimal`), `product_url`, `image_url`, `category`, `generated_message`, `status` (`PENDING` | `SENT` | `FAILED`), `attempts`, `last_error`, `sent_at`, `created_at`, `updated_at` (todos `TIMESTAMPTZ`).
-Índices: `asin`; único parcial `uq_promotions_pending_asin` (uma `PENDING` por ASIN); parcial `ix_promotions_pending_created_at` (fila de envio).
+Tabela `promotions`: `id` (UUID), `store` (`amazon` | `shopee` | `aliexpress`, texto com CHECK `promotion_store`), `external_id` (ASIN, item id ou product id), `title`, `original_price`, `discounted_price`, `discount_percentage` (opcionais: Amazon curada não tem preço; Shopee não informa o preço original), `rating`, `product_url`, `affiliate_url` (link rastreado de Shopee/AliExpress), `image_url`, `category` (opcional), `generated_message`, `status` (`PENDING` | `SENT` | `FAILED`), `attempts`, `last_error`, `sent_at`, `created_at` (também é o horário em que o preço foi lido), `updated_at` (todos `TIMESTAMPTZ`).
+Índices: `(store, external_id)`; único parcial `uq_promotions_pending_product` (uma `PENDING` por produto); parcial `ix_promotions_pending_created_at` (fila de envio).
 
 ### API
 
@@ -128,36 +130,38 @@ Toda rota em `/api/promotions` exige `X-API-KEY`. Erros sempre no formato `{erro
 | Método | Rota | O que faz |
 |---|---|---|
 | GET | `/`, `/health` | públicas: metadados e health check |
-| POST | `/api/promotions/run` | coleta + dedup + salva como `PENDING` |
+| POST | `/api/promotions/run` | coleta de todas as fontes + dedup + salva como `PENDING` (informa `failed_sources`) |
+| POST | `/api/promotions/curated` | Amazon escolhida à mão (ASIN ou URL, título, copy opcional), sem preço; 409 se duplicada |
 | GET | `/api/promotions` | lista paginada (`limit` 1–100, `offset`) |
 | POST | `/api/promotions/{id}/generate-copy` | gera e persiste a copy |
 | POST | `/api/promotions/{id}/send-telegram` | envia uma (409 se já enviada ou se outra entrega estiver em andamento) |
-| POST | `/api/promotions/send-pending-telegram` | envia um lote de `PENDING` (`limit` 1–50) |
+| POST | `/api/promotions/send-pending-telegram` | envia um lote de `PENDING` (`limit` 1–50); sem `AMAZON_PARTNER_TAG`, retém só as da Amazon (`skipped_stores`) |
 
 ### Fases concluídas
 
 - **Fase 0 — Correções do diagnóstico inicial:** `requirements.txt` em UTF-8; URL do banco fora do `alembic.ini`; todas as rotas autenticadas; tag de afiliado; dedup que vazava em `FAILED`; rollback antes de marcar falha; `Decimal` nos preços; timeout e fallback da OpenAI; scheduler com `max_instances=1`, `coalesce` e fuso explícito; fallback do Telegram estreito; DI com `Depends`; schemas tipados nos serviços; host `127.0.0.1` em dev; compose lendo o `.env` com healthcheck; `.env.example`; ruff; logging configurado.
-- **Fase 1 — Testes:** 156 testes; integração contra Postgres real; cobertura de branches ~97% (medida uma vez, sem meta automatizada); pre-commit roda ruff + pytest a cada commit.
+- **Fase 1 — Testes:** suíte unitária + integração contra Postgres real; cobertura de branches ~97% (medida uma vez, sem meta automatizada); pre-commit roda ruff + pytest a cada commit.
 - **Fase 2 — Resiliência e observabilidade:** `request_id` por requisição e por ciclo (`X-Request-ID`); logs em texto ou JSON (`LOG_FORMAT`) com mascaramento de tokens; handler global de exceções; retry com backoff exponencial + jitter no Telegram e retries do SDK na OpenAI; circuit breaker por serviço (Telegram: 3 falhas → pausa de 120 s; OpenAI: 3 falhas → 300 s); reprocessamento com limite de tentativas; advisory lock do Postgres impedindo duas entregas simultâneas.
+- **Fase 3 — Fontes reais (implementada, falta validação real):** modelo multi-loja; `PromotionSource` com registro por `PROMOTION_SOURCES`; fontes Shopee e AliExpress com retry, circuit breaker e secret mascarado; curadoria manual da Amazon sem preço; bloco de preço montado pelo código com horário; copy da IA sem números; preço com mais de 24h não é postado; link de afiliado por loja.
 
 ### Limitações conhecidas
 
-- **A fonte de produtos ainda é mock** (3 produtos fixos, ASINs e imagens inventados). **O scheduler deve ficar desligado (`SCHEDULER_ENABLED=false`) até existir fonte real** — ligado, ele posta produtos fictícios no grupo.
-- A janela de dedup de 24h está fixa no código (`promotion_service.py`).
+- **Shopee e AliExpress nunca rodaram contra a API real.** O contrato veio de fontes públicas (a doc oficial da Shopee só abre para afiliados aprovados). Validar com credenciais reais (checklist no README) antes de ligar o scheduler.
+- **O scheduler continua desligado** até uma fonte real estar validada; o `Settings` recusa `SCHEDULER_ENABLED=true` com `mock` em `PROMOTION_SOURCES`.
+- Produtos da Shopee com faixa de preço (variações com preços diferentes) são ignorados, por não terem um preço único para postar.
+- Título, preço e link de imagem ficam guardados por tempo indefinido; a licença da Amazon permite no máximo 24h (só o ASIN pode ficar). Resolver na limpeza da Fase 4.
 - Com `LOG_FORMAT=json`, as 2 primeiras linhas de boot do uvicorn ainda saem em texto (resolver com `--log-config` na Fase 6).
 
 ## 8. Backlog — o que FALTA, em ordem de prioridade
 
-### Fase 3 — Fonte de dados real (próxima; bloqueante para o projeto ter valor)
-- **Antes de implementar:** apresentar as opções da seção 9, item 1, e eu escolho.
-- Extrair `PromotionSource` (`Protocol`) com o mock como implementação alternativa, selecionável por variável de ambiente.
-- Implementação real: autenticação, categorias configuráveis, tratamento do rate limit da fonte, todos os campos (inclusive `image_url` real) vindos dela. `AmazonSourceError` nasce aqui.
-- Formato da mensagem conforme o Associados: preço com carimbo de horário e aviso de isenção (mensagem do Telegram nunca é atualizada).
-- Janela de dedup configurável; preço nunca exibido com mais de ~24h de cache.
-- Depois disso, conferir o checklist para ligar o scheduler em produção.
+### Fase 3 — Fontes reais (o que falta)
+- **Validar Shopee e AliExpress com credenciais reais** (checklist no README), uma loja por vez, e corrigir o que divergir da documentação pública. Pontos mais incertos: na Shopee, a assinatura e os campos de `productOfferV2`; na AliExpress, o aninhamento `resp_result.result` e o código devolvido quando a busca vem vazia.
+- **Creators API da Amazon** quando a conta tiver 10 vendas qualificadas em 30 dias: nova fonte `amazon` com OAuth `client_credentials`, `searchItems` com `minSavingPercent`, e preço no formato exigido pelo Associados ("Preço na Amazon.com.br: … (em … às … Horário de Brasília)").
+- Depois da validação: tirar `mock` de `PROMOTION_SOURCES`, ligar o scheduler e acompanhar os primeiros ciclos.
+- Avaliar exibir "a partir de R$ X" para produtos da Shopee com variações, se descartá-los cortar resultados demais.
 
 ### Fase 4 — Operação e observabilidade
-- Job de **limpeza de registros antigos** (cron com fuso explícito, ex.: 03:00).
+- Job de **limpeza de registros antigos** (cron com fuso explícito, ex.: 03:00), que também apaga título, preço e link de imagem de promoções com mais de 24h (licença da Amazon), mantendo só loja, id e status para dedup e estatísticas.
 - `GET /api/stats`: enviados hoje, falhas, taxa de sucesso, últimos erros, custo estimado de OpenAI.
 - Filtros adicionais na listagem (status, categoria, faixa de desconto, período).
 - Métricas de execução do scheduler (última execução, duração, itens processados).
@@ -192,18 +196,20 @@ Toda rota em `/api/promotions` exige `X-API-KEY`. Erros sempre no formato `{erro
 
 Você deve me alertar e discutir estes itens em vez de decidir sozinho:
 
-1. **Fonte de dados (próximo passo).** A PA-API 5.0 exige conta ativa no Amazon Associates e, tipicamente, vendas qualificadas em um período para liberar/manter as credenciais; as políticas BR citam "Creators API" e "API de Divulgação de Produtos" — confirmar qual vale hoje. **Scraping viola os Termos de Serviço** e boa parte das rotas de ofertas está bloqueada no `robots.txt`: risco de bloqueio de IP e de conta. Nada de rotação de proxy, User-Agent disfarçado ou CAPTCHA. Apresente as opções realistas (PA-API/Creators API, redes de afiliados intermediárias, feeds autorizados, mock em produção temporário) com prós, contras e requisitos de cada uma, e me deixe escolher.
+1. **Fonte de dados — decidido em 09/11/2026:** multi-loja com APIs oficiais (Shopee, AliExpress) + Amazon por curadoria manual sem preço até a Creators API ser liberada (a PA-API 5.0 foi aposentada em 05/2026; a Creators API exige 10 vendas qualificadas em 30 dias). Mercado Livre e Magalu ficaram de fora por não terem API pública de afiliados. **Scraping continua proibido** (Termos de Serviço, `robots.txt`): nada de rotação de proxy, User-Agent disfarçado ou CAPTCHA. Nova loja só com API oficial, e com a mesma análise de prós, contras e requisitos antes de implementar.
 2. **Evolution API usa WhatsApp não oficial.** Há risco concreto de banimento do número. Discuta: número dedicado, volume de mensagens, alternativa oficial (WhatsApp Cloud API, que não posta em grupos) e as restrições de opt-in/templates. O Associados só permite mensagens solicitadas: ninguém entra no grupo sem consentimento.
 3. **Custo da OpenAI.** Já em vigor: copy gerada uma vez por promoção e reaproveitada, `max_output_tokens=300`, rotas que gastam tokens autenticadas. Pendente: estimativa de custo mensal por volume antes de fixar o modelo em produção. Manter desligado, na conta da OpenAI, o compartilhamento de dados para treino (exigência do Associados).
 4. **Modelagem de status por canal.** Um único campo `status` na `Promotion` não basta com dois canais. Proponha a modelagem antes de implementar a Fase 5.
 5. **Conformidade.** Decidido em 05/11/2026: a frase de divulgação do Associados fica na **descrição do canal** do Telegram (aplicada manualmente por mim), não em cada mensagem. "Amazon" não pode aparecer no nome do grupo/canal. Se passarmos a armazenar dados de usuários dos grupos, avaliar **LGPD** (minimização de dados, base legal, retenção).
+6. **Termos de cada programa de afiliados.** Ao me cadastrar na Shopee e na AliExpress, ler as regras sobre canais permitidos (Telegram/WhatsApp), exibição de preço e uso da marca. Os termos do Associados BR já foram lidos.
 
 ## 10. Padrões técnicos obrigatórios
 
 - **Camadas com responsabilidade única:** rota → serviço → repositório → banco. Rota não conhece SQLAlchemy; repositório não conhece HTTP; serviço não monta resposta HTTP.
 - **Nunca expor models do SQLAlchemy nas rotas.** Sempre schemas Pydantic de entrada e saída, separados.
 - **Injeção de dependência** via `Depends`, com os provedores em `app/dependencies.py` (sessão, repositórios, serviços). A configuração é lida do objeto `settings` de `app/core/config.py`; nos testes, `monkeypatch`.
-- **Integrações externas atrás de abstrações** (`Protocol`) — obrigatório para a fonte de produtos (Fase 3) e os canais de envio (Fase 5).
+- **Integrações externas atrás de abstrações** (`Protocol`): fontes de promoções implementam `PromotionSource` (`app/sources/base.py`) e são registradas em `app/sources/registry.py` + `SourceName`; os canais de envio seguem o mesmo padrão na Fase 5 (`MessageChannel`).
+- **Regras de negócio comuns ficam fora das fontes:** desconto mínimo, dedup e persistência estão no `PromotionService`; a fonte só busca e mapeia.
 - **Código síncrono, por decisão:** rotas `def` (o FastAPI as executa em threadpool), httpx síncrono e `BackgroundScheduler`. Com um ciclo a cada 10 min e tráfego baixo, migrar para `async` seria uma reescrita sem ganho real. Nunca chamada bloqueante dentro de `async def`: rota `async` só se todo o I/O dela também for.
 - **Toda mudança de schema passa por migration Alembic.** Nunca `create_all` em produção.
 - **Índices** servindo as queries de dedup e de fila (hoje: `asin` + dois parciais sobre `PENDING`); índice novo só com uma query que o use.
@@ -225,6 +231,10 @@ Você deve me alertar e discutir estes itens em vez de decidir sozinho:
 - **Testes de integração contra o Postgres do Compose** (banco `amazonbot_test`) em vez de Testcontainers: mesmo resultado, sem dependência extra.
 - **`requirements.txt` é o `pip freeze` completo** (decisão de 29/08/2026).
 - **Divulgação do Associados na descrição do canal** (seção 9, item 5).
+- **Multi-loja** (09/11/2026): Shopee e AliExpress por API oficial; Amazon por curadoria manual sem preço até a Creators API. Produto identificado por `(store, external_id)`; loja validada por CHECK em vez de enum do Postgres (fácil de evoluir por migration).
+- **Preço montado pelo código, nunca pela IA**, com o horário em que foi lido; a copy que mencionar preço é trocada pelo template. Preço lido há mais de 24h não é postado.
+- **Link de afiliado por loja:** tag da Amazon aplicada no envio; Shopee e AliExpress usam o link rastreado da própria API (obrigatório na entrada). Sem tag da Amazon, só a Amazon fica retida.
+- **Links curtos `amzn.to` são recusados** na curadoria: resolvê-los seria o bot acessando a Amazon.
 
 ## 12. Definition of Done (aplicar a todo item)
 
