@@ -48,9 +48,12 @@ class PromotionResponse(BaseModel):
 
 
 class PromotionProcessingResult(BaseModel):
-    fetched: int
-    saved: int
-    duplicates_skipped: int
+    fetched: int = 0
+    saved: int = 0
+    duplicates_skipped: int = 0
+    below_min_discount: int = 0
+    # Sources that could not be read this time; the others were still collected.
+    failed_sources: list[str] = Field(default_factory=list)
 
 
 class GeneratedCopyResponse(BaseModel):

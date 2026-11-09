@@ -6,8 +6,8 @@ from app.core.config import settings
 from app.core.request_context import new_request_id, request_id_var
 from app.db.database import SessionLocal
 from app.dependencies import (
-    get_amazon_service,
     get_openai_service,
+    get_promotion_sources,
     get_telegram_service,
 )
 from app.repositories.promotion_repo import PromotionRepository
@@ -75,18 +75,20 @@ def _run_promotion_cycle() -> None:
             promotion_repository = PromotionRepository(db)
 
             promotion_service = PromotionService(
-                amazon_service=get_amazon_service(),
+                sources=get_promotion_sources(),
                 promotion_repository=promotion_repository,
             )
 
             collection_result = promotion_service.collect_pending_promotions()
 
             logger.info(
-                "Promotion collection finished: "
-                "fetched=%s saved=%s duplicates_skipped=%s",
+                "Promotion collection finished: fetched=%s saved=%s "
+                "duplicates_skipped=%s below_min_discount=%s failed_sources=%s",
                 collection_result.fetched,
                 collection_result.saved,
                 collection_result.duplicates_skipped,
+                collection_result.below_min_discount,
+                ",".join(collection_result.failed_sources) or "-",
             )
 
             delivery_service = PromotionDeliveryService(

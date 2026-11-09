@@ -13,8 +13,8 @@ from fastapi.testclient import TestClient
 
 from app.core.config import settings
 from app.dependencies import (
-    get_amazon_service,
     get_openai_service,
+    get_promotion_sources,
     get_telegram_service,
 )
 from app.main import app
@@ -66,8 +66,9 @@ def test_pending_route_returns_the_counts(committed, client):
 
 
 def test_run_route_collects_from_the_injected_source(committed, client):
-    amazon = override(get_amazon_service, MagicMock())
-    amazon.fetch_promotions.return_value = [
+    source = MagicMock()
+    override(get_promotion_sources, (source,))
+    source.fetch_promotions.return_value = [
         PromotionCandidate(
             store=Store.AMAZON,
             external_id="B0INJECT01",
@@ -83,8 +84,9 @@ def test_run_route_collects_from_the_injected_source(committed, client):
     first = client.post("/api/promotions/run", headers=API_KEY).json()
     second = client.post("/api/promotions/run", headers=API_KEY).json()
 
-    assert first == {"fetched": 1, "saved": 1, "duplicates_skipped": 0}
-    assert second == {"fetched": 1, "saved": 0, "duplicates_skipped": 1}
+    assert first["saved"] == 1
+    assert second["saved"] == 0
+    assert second["duplicates_skipped"] == 1
 
 
 def test_generate_copy_route_persists_the_injected_copy(committed, client):

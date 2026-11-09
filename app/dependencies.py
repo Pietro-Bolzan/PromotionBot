@@ -11,13 +11,15 @@ from typing import Annotated
 from fastapi import Depends
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.db.database import get_db
 from app.repositories.promotion_repo import PromotionRepository
-from app.services.amazon_service import AmazonService
 from app.services.openai_service import OpenAIService
 from app.services.promotion_delivery_service import PromotionDeliveryService
 from app.services.promotion_service import PromotionService
 from app.services.telegram_service import TelegramService
+from app.sources.base import PromotionSource
+from app.sources.registry import build_sources
 
 
 def get_promotion_repository(
@@ -39,8 +41,8 @@ def get_telegram_service() -> TelegramService:
 
 
 @lru_cache
-def get_amazon_service() -> AmazonService:
-    return AmazonService()
+def get_promotion_sources() -> tuple[PromotionSource, ...]:
+    return build_sources(settings.promotion_sources)
 
 
 PromotionRepositoryDep = Annotated[
@@ -48,15 +50,17 @@ PromotionRepositoryDep = Annotated[
 ]
 OpenAIServiceDep = Annotated[OpenAIService, Depends(get_openai_service)]
 TelegramServiceDep = Annotated[TelegramService, Depends(get_telegram_service)]
-AmazonServiceDep = Annotated[AmazonService, Depends(get_amazon_service)]
+PromotionSourcesDep = Annotated[
+    tuple[PromotionSource, ...], Depends(get_promotion_sources)
+]
 
 
 def get_promotion_service(
-    amazon_service: AmazonServiceDep,
+    sources: PromotionSourcesDep,
     promotion_repository: PromotionRepositoryDep,
 ) -> PromotionService:
     return PromotionService(
-        amazon_service=amazon_service,
+        sources=sources,
         promotion_repository=promotion_repository,
     )
 

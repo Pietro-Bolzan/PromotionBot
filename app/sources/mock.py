@@ -1,13 +1,20 @@
 from decimal import Decimal
 
-from app.core.config import settings
 from app.models.promotions import Store
 from app.schemas.promotion_schema import PromotionCandidate
 
 
-class AmazonService:
+class MockSource:
+    """Fixed, fictitious Amazon products for development and tests.
+
+    Never point a real channel at it: the products and their links do not
+    exist. Settings refuses to start the scheduler while it is enabled.
+    """
+
+    name = "mock"
+
     def fetch_promotions(self) -> list[PromotionCandidate]:
-        candidates = [
+        return [
             PromotionCandidate(
                 store=Store.AMAZON,
                 external_id="B0CNOTE001",
@@ -34,20 +41,14 @@ class AmazonService:
             ),
             PromotionCandidate(
                 store=Store.AMAZON,
-                external_id="B0LOWDISC04",
+                external_id="B0LOWDISC4",
                 title="Mouse Sem Fio Compacto USB",
                 original_price=Decimal("89.90"),
                 discounted_price=Decimal("79.90"),
                 discount_percentage=Decimal("11.12"),
-                product_url="https://www.amazon.com.br/dp/B0LOWDISC04",
+                product_url="https://www.amazon.com.br/dp/B0LOWDISC4",
                 image_url="https://m.media-amazon.com/images/I/51mockmouse.jpg",
                 category="Computers",
                 rating=Decimal("4.30"),
             ),
-        ]
-
-        return [
-            candidate
-            for candidate in candidates
-            if candidate.discount_percentage >= settings.amazon_min_discount_percent
         ]

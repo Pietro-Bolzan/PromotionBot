@@ -42,8 +42,8 @@ def add_row(db, make_promotion, **fields) -> Promotion:
 
 
 def collect(db, *asins: str) -> PromotionProcessingResult:
-    amazon = MagicMock()
-    amazon.fetch_promotions.return_value = [
+    source = MagicMock()
+    source.fetch_promotions.return_value = [
         PromotionCandidate(
             store=Store.AMAZON,
             external_id=asin,
@@ -57,7 +57,7 @@ def collect(db, *asins: str) -> PromotionProcessingResult:
         for asin in asins
     ]
     return PromotionService(
-        amazon, PromotionRepository(db)
+        [source], PromotionRepository(db)
     ).collect_pending_promotions()
 
 

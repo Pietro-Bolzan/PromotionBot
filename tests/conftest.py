@@ -34,6 +34,7 @@ os.environ.update(
         "TELEGRAM_BOT_TOKEN": "",
         "TELEGRAM_CHAT_ID": "",
         "SCHEDULER_ENABLED": "false",
+        "PROMOTION_SOURCES": "mock",
         "DELIVERY_MAX_ATTEMPTS": "3",
     }
 )
